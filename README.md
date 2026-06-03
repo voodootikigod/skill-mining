@@ -1,0 +1,84 @@
+# Skill Mining
+
+> Point an agent at a codebase and ask: *what reusable skills and agents are
+> latent in here that would make every future change faster, more accurate, and
+> easier to maintain?* Then extract them as durable artifacts that ship with the
+> repo and get sharper every time they're used.
+
+**Skill mining** is a repeatable loop for turning the institutional knowledge
+buried in a codebase — the build incantations, domain rules, conventions, review
+checklists, and deploy recipes that everyone re-derives — into a portfolio of
+**agent skills** (`SKILL.md` files) and **agent definitions** that compose them.
+
+This repo packages skill mining as an open, cross-harness **agent skill**. It
+works in Claude, Codex, Antigravity, Cursor, Zed, and any harness that speaks the
+open `SKILL.md` format.
+
+## Install
+
+```bash
+npx skills add voodootikigod/skill-mining
+```
+
+Or copy `skill-mining/` into your harness's skills directory (see
+[`skill-mining/references/cross-harness.md`](skill-mining/references/cross-harness.md)).
+
+## Use
+
+Invoke the skill against a repo:
+
+```
+mine this repo for skills
+```
+
+It runs a seven-phase loop with two adversarial gates — **Survey → Detect →
+Score → ⟂Challenge → Dedupe → Author → ⟂Red-team → Compose → Verify & Report** —
+and writes:
+
+1. **Mined skills** — one `SKILL.md` per kept candidate.
+2. **Mined agents** — role definitions (implementer, fixer, reviewer, migrator)
+   that compose the skills into a team.
+3. **`SKILLS_MINED.md`** — a report with every candidate, its leverage score, and
+   the reuse-vs-build decision.
+
+The core idea: **reuse before you build.** Most candidates should resolve to an
+existing community skill. The few that are genuinely bespoke and high-leverage
+become new, repo-specific skills.
+
+## What's in here
+
+```
+skill-mining/
+├── SKILL.md                         # the mining loop (the skill itself)
+└── references/
+    ├── candidate-taxonomy.md        # where skills hide (the detection sweep)
+    ├── scoring-rubric.md            # how to rank candidates (5 axes)
+    ├── adversarial-review.md        # the two refute-by-default gates (A + B)
+    ├── cross-harness.md             # format + per-harness install map
+    └── templates/
+        ├── skill-template.md
+        ├── agent-template.md
+        └── report-template.md
+```
+
+## From one repo to the whole org
+
+Skill mining is the **repo-level** loop — one developer or team, one codebase,
+run on demand.
+
+The same shape scales up. Run it **continuously across an entire organization's
+AI traffic** instead of one repository and it becomes *portfolio curation*:
+detect the recurring AI work patterns across teams, match them to the capabilities
+that already exist, find where people are reinventing or bypassing standards, and
+build only what's genuinely missing. That loop — **detect recurring know-how →
+match to what exists → find the gaps → build only what's missing → measure
+coverage over time** — is what turns chaotic, expensive AI sprawl into an
+intentional operating model. It's a key factor in both *agentic adoption* and *AI
+financial optimization* at enterprise scale.
+
+That enterprise-scale version is a separate effort, and there's more to share on
+it soon.
+
+## License
+
+MIT © 2026 Chris Williams (VoodooTikiGod). See [LICENSE](LICENSE).
