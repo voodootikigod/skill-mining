@@ -37,6 +37,46 @@ the skill and are loaded on demand (progressive disclosure).
 When in doubt, author into `.agents/skills/` — the neutral location most harnesses
 read — and let the package manager fan out copies.
 
+## Agents and team manifests per harness
+
+Skills are portable as-is. **Agent definitions are not** — `tools` and `model`
+fields are harness-specific, so a Claude-shaped agent is ignored or rejected
+elsewhere. Author the **portable core** (name, description, `loads_skills`,
+neutral `capabilities`) once, then render the harness overlay only for the target.
+
+| Harness | Where a runnable role is registered | `tools` / `model` |
+|---|---|---|
+| **Claude** | `.claude/agents/<name>.md` | `tools: [Read, Edit, Grep, Glob, Bash]`; `model: sonnet\|opus\|haiku` |
+| **Codex** | `[agents.<name>]` in Codex config → `.codex/agents/<role>.toml` (repo-local) or `~/.codex/agents/`. `AGENTS.md` is **context prose only**, not where roles/permissions register. | translate `capabilities`; model + permissions in the role's TOML/config |
+| **Cursor** | `.cursor/agents/` (or rules) | Cursor tool vocabulary |
+| **Zed** | `.zed/agents/` | Zed tool vocabulary |
+| **Neutral** | `.agents/agents/<name>.md` | omit `tools`/`model`; keep `capabilities` |
+
+**Capability → tool translation matrix.** When you render a harness overlay, map
+each neutral capability to the concrete representation below. `omit` means the
+harness infers the tool automatically — emit nothing for that capability.
+
+| Neutral capability | Claude (`tools:`) | Codex | Cursor | Zed | Neutral |
+|---|---|---|---|---|---|
+| read files | `Read` | omit (default) | omit (default) | omit (default) | omit |
+| edit files | `Edit` (+ `Write` to create) | `edit` permission in the role's `.codex/agents/<role>.toml` / `[agents.<name>]` config | enable Edit in agent rules | enable edit | omit |
+| search code | `Grep`, `Glob` | omit (default) | omit (default) | omit (default) | omit |
+| run shell commands | `Bash` | `shell`/`exec` permission in the role's `.codex/agents/<role>.toml` / `[agents.<name>]` config | enable Terminal/Run | enable terminal | omit |
+| fetch web / docs | `WebFetch`, `WebSearch` | tool/plugin if enabled | enable web | enable web | omit |
+| **model selection** | `model: sonnet\|opus\|haiku` | set in Codex config, not the agent file | model picker / rules | settings | omit |
+
+Notes: Codex generally **infers** read/search from the task and gates **edit/shell
+via role config**. Register a runnable role with an `[agents.<name>]` entry in
+Codex config pointing at a `.codex/agents/<role>.toml` (repo-local) or
+`~/.codex/agents/` layer — that TOML carries the model and edit/shell permissions.
+`AGENTS.md` is optional context prose; roles written there are **not** registered
+as runnable agents. Cursor/Zed enable tools through agent/rules UI rather than a
+frontmatter list; the `capabilities` list is your checklist of what to switch on.
+
+The **team manifest** is plain Markdown (a table + handoff order) and lives in
+`SKILLS_MINED.md` — portable everywhere. Only the per-persona agent files carry
+harness-specific fields.
+
 ## Keep skill bodies tool-agnostic
 
 Portability comes from *what you write*, not just where you put it:

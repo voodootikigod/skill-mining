@@ -13,23 +13,94 @@
 Every candidate considered, with score and decision. Nothing dropped silently.
 Scores shown are *post–Gate A* (after the independent skeptic re-scored).
 
+> If the reuse search could not run (offline / registry unreachable), set the
+> candidate's decision to **REUSE-CHECK-UNAVAILABLE** — never BUILD on a failed
+> search. Such rows must be re-checked on the next online pass.
+
 | Candidate | Type | Freq | Lev | Bsp | Stab | Ver | Decision | Gate A objection / Source |
 |---|---|:--:|:--:|:--:|:--:|:--:|---|---|
 | how-this-repo-runs | skill | 5 | 5 | 4 | 5 | 5 | **BUILD** | survived: no public skill covers the env/port setup |
 | react-best-practices | skill | 4 | 4 | 1 | 4 | 3 | **REUSE** | refuted bespokeness → `vercel-labs/agent-skills` |
 | <...> | | | | | | | | |
 
-## Built skills
+## Built / reused skills — with identity
 
-For each: name, what it encodes, install path, and the **Gate B red-team
-evidence** (a cold agent used only the SKILL.md on a real task and it worked).
+For each skill, record **identity fields** so partial modes (`--agents-only`,
+`--report-only`) can detect drift and fail closed. Verification policy differs by
+origin: **BUILT/EXTENDED** skills are verified by **Gate B** (cold cold-use);
+**REUSED** community skills are not cold-authored here — they are verified by a
+**pinned source version + fingerprint** instead. Neither uses `n/a` in a required
+field.
 
-- **`<name>`** — <one line>. Installed at `.agents/skills/<name>/`. Gate B:
-  used cold against <real task/diff> → <result>; fixes applied: <none | list>.
+Every row — including REUSED — records the **same whole-directory fingerprint**
+`sha256:<sorted-manifest-hash>` plus the recorded file
+list. No single-file blob hashes, no package-lock hashes.
+
+| Skill | Origin | Path | Source / version pin | Content fingerprint (whole dir) | Verification |
+|---|---|---|---|---|---|
+| `<name>` | BUILT | `.agents/skills/<name>/` | this repo @ `<commit>` | `sha256:<manifest-hash>` | **Gate B** @ `<commit/ISO>`: used cold vs `<task>` → SHIP; fixes `<none\|list>` |
+| `<name2>` | EXTENDED | `.agents/skills/<name2>/` | `<base pkg>@<ver>` + overlay | `sha256:<manifest-hash>` | **Gate B** @ `<commit/ISO>`: used cold vs `<task>` → SHIP |
+| `<reused>` | REUSED | `.agents/skills/<reused>/` | `npx skills add <user/repo>@<version>` | `sha256:<manifest-hash>` | **Version pin** @ `<version>` (community-maintained; no Gate B by policy) |
+
+**Reuse-check status (required for BUILT/EXTENDED rows).** A BUILD is only
+justified by a *successful* search that found no reusable skill. Record one of:
+
+- `reuse-checked: <query> via <find-skills|npx skills find> @ <commit/ISO> → no match`
+- `reuse-unchecked (offline @ <ISO>)` — built under user-approved offline mode; the
+  reuse search never ran and **must** be re-run on the next online pass.
+
+Per-skill **file manifest** (required for every row — this *is* the recorded file
+list partial modes compare against). The whole-directory fingerprint is the hash
+of this manifest:
+
+```
+# <name> — manifest @ <commit/ISO>
+references/cross-harness.md   sha256:<…>
+references/scoring-rubric.md  sha256:<…>
+SKILL.md                      sha256:<…>
+# fingerprint = sha256(sorted lines above) = sha256:<manifest-hash>
+```
+
+A `--agents-only` / `--report-only` run **re-derives this manifest from disk** and
+rejects the report if the manifest is absent, a listed file is missing/changed, or
+a new file appears that isn't listed.
+
+> **Fingerprint** = a hash over the **entire skill directory**, not just
+> `SKILL.md`. Supporting files (`references/`, `scripts/`, `templates/`) can carry
+> loaded instructions, so hashing only `SKILL.md` would miss real drift. Compute
+> it deterministically as `sha256` of a sorted manifest of
+> `<relative-path> <per-file-sha256>` lines covering every shipped file in the
+> directory (one algorithm, no alternatives). Record the file list so
+> added/removed files are detectable too.
+> **A partial mode must recompute each directory fingerprint and compare. STOP and
+> tell the user to run a full pass on any: missing path, fingerprint mismatch, an
+> added/removed/changed file, a BUILT/EXTENDED row missing Gate B, or a REUSED row
+> missing its version pin.**
 
 ## Composed agents
 
+> Omit this section if run with `--no-agents` / `--skills-only` (note the exclusion).
+
 - **`<role>`** — loads `<skill-a>`, `<skill-b>`. Use for <job>.
+
+## Team manifest
+
+> Omit if run with `--no-team` (or `--no-agents`); note the exclusion instead.
+
+How the personas operate as a team. Every handoff must name the **artifact
+passed** and the **condition** that lets the next persona proceed — a table that
+omits Receives/Produces is too vague to run.
+
+| Persona | Loads skills | Triggered by | Receives | Produces | Hands off to (payload — proceed-when) | Escalates when |
+|---|---|---|---|---|---|---|
+| Implementer | `<...>` | new feature/change | task/spec | a diff | Reviewer (diff — tests pass) | spec ambiguous → human |
+| Reviewer | `<...>` | a diff exists | the diff | findings or ✓ | Fixer (findings — issues exist) / done (✓ — none) | CRITICAL security → human |
+| Fixer | `<...>` | review findings / bug | findings + diff | a patch | Reviewer (patch — findings addressed) | root cause unclear → human |
+| Migrator/Operator | `<...>` | schema/deploy change | the change | applied migration/deploy | Reviewer (result — applied + reversible) | irreversible op → human |
+
+**Handoff loop:** `Implementer → Reviewer → Fixer → Reviewer ✓`; schema/deploy
+changes branch to `Migrator/Operator`. Each arrow carries the named payload and
+fires only when its proceed-when condition holds.
 
 ## Reused / Extended
 

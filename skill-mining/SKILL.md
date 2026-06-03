@@ -10,10 +10,10 @@ description: >-
   composes agent definitions that orchestrate them into an implementation team.
 license: MIT
 user-invocable: true
-argument-hint: "[path-or-scope] [--skills-only | --agents-only | --report-only]"
+argument-hint: "[path-or-scope] [--no-agents] [--no-team] [--agents-only | --report-only]"
 metadata:
   version: 1.0.0
-  author: Chris Williams (VoodooTikiGod)
+  author: Chris Williams (@voodootikigod)
   homepage: https://skills.sh
 ---
 
@@ -56,9 +56,59 @@ By the end of a run you deliver, written to the repo:
    `references/cross-harness.md`).
 2. **Mined agents** — one agent definition per role that composes the skills
    (`references/templates/agent-template.md`).
+2a. **A team manifest** (default on) — inside the report: the agent roster, the
+   skills each loads, and the handoff order so the personas operate *as a team*,
+   not a bag of agents.
 3. **A mining report** — `SKILLS_MINED.md` at the repo root: every candidate,
    its score, the reuse-vs-build decision, and why
    (`references/templates/report-template.md`).
+
+## Options
+
+All optional. Sensible defaults mean a bare "mine this repo for skills" produces
+the full output (skills + agents + team). Flags only *remove* work.
+
+| Flag | Default behavior | Effect when set |
+|---|---|---|
+| *(none)* | Mine skills **and** agents, composed **as a team**. | — |
+| `--no-agents` | Agents are built. | Skip Phase 6 entirely. Skills + report only. (Alias: `--skills-only`.) |
+| `--no-team` | Personas are wired into a team (handoffs + manifest). | Build the agent personas, but as standalone roles — no team-composition step, no team manifest. |
+| `--agents-only` | — | Assume skills already mined; (re)compose agents + team from the existing skills. |
+| `--report-only` | — | Re-emit `SKILLS_MINED.md` from prior results; author nothing. |
+
+Precedence: `--no-agents` implies `--no-team` (no agents ⇒ no team). If the user
+didn't pass a flag, default to the fullest output — agents and team included.
+
+**Partial modes read prior state; fail closed if it's missing.** `--agents-only`
+and `--report-only` do not re-mine — they depend on artifacts a previous full run
+left behind. Their single source of truth is **`SKILLS_MINED.md`** plus the
+installed skill directories it references.
+
+- `--agents-only` requires `SKILLS_MINED.md` with each skill's **path** and
+  **content fingerprint** (see the report's identity table). The fingerprint
+  covers the **whole skill directory** — `SKILL.md` plus every `references/`,
+  `scripts/`, and `templates/` file — since supporting files carry loaded
+  instructions. The report records a **per-skill file manifest** (sorted
+  `path sha256` lines); the fingerprint is the hash of that manifest. Before
+  composing, **re-derive each manifest from disk and compare it to the report**,
+  failing on any added, removed, or changed file, or an absent manifest.
+  Verification policy
+  by origin: a **BUILT/EXTENDED** skill must carry matching fingerprint **+ Gate B
+  evidence + a `reuse-checked` status**; a **REUSED** community skill must carry a
+  matching **pinned source version** (no Gate B — it is community-maintained, not
+  authored here). Only wire agents to skills that satisfy their origin's policy.
+  **Reject any BUILT/EXTENDED skill still marked `reuse-unchecked`** (built offline)
+  unless the user has approved offline mode *for this run* — otherwise the offline
+  escape hatch becomes permanent and an un-searched duplicate ships indefinitely.
+- `--report-only` requires a prior `SKILLS_MINED.md` (or the structured results
+  from a same-session run) to re-emit.
+
+If a required artifact is **absent, fingerprint-mismatched (the skill changed
+since it was verified), a BUILT/EXTENDED skill missing Gate B, a BUILT/EXTENDED
+skill still `reuse-unchecked` without current offline approval, a REUSED skill
+missing its version pin, or internally inconsistent**, STOP and tell the user to
+run a full pass — do not reconstruct state from guesses, and never wire an agent
+to a skill whose recorded verification no longer matches its current content.
 
 Nothing is silently dropped. Every candidate considered appears in the report,
 even the rejected ones — a rejected candidate with a clear reason is a real
@@ -161,11 +211,35 @@ majority/veto for safety-relevant skills) are in
 ### Phase 4 — Dedupe (reuse before you build)
 
 For each surviving candidate, **check the ecosystem before authoring anything.**
-The cheapest skill is the one someone already maintains.
+The cheapest skill is the one someone already maintains. This step is the whole
+defense against **skill sprawl** — never skip it.
 
-1. Search installed skills and the open registry — use the `find-skills` skill
-   if available, or `npx skills find <query>` and the https://skills.sh
-   leaderboard.
+**Preflight — secure the search capability (do this once per run).** The reuse
+search needs the `skills` CLI; it is zero-install (`npx skills …` fetches it on
+demand), so there is nothing to set up. The `find-skills` skill is a recommended
+companion that makes the search smarter (leaderboard reasoning, source-trust
+checks), but it is **not required** — this skill degrades gracefully without it.
+
+- If `find-skills` is installed → use it to drive the search.
+- If not → either bootstrap it (`npx skills find find-skills`, then
+  `npx skills add <the result>`) or, equally valid, **proceed directly** with
+  `npx skills find <query>`. Do **not** block or fail on a missing `find-skills`.
+
+**Two failures, two policies — don't conflate them:**
+
+| Condition | Policy |
+|---|---|
+| `find-skills` companion **absent** | Degrade silently to `npx skills find`. Not an error. |
+| The **search itself fails** (no network, CLI fetch fails, registry/leaderboard unreachable) | **Fail closed.** A failed search is *not* "no match found." Record the candidate's reuse check as **UNAVAILABLE** in the report and do **not** silently BUILD. Stop and tell the user, or proceed only under an explicit user-approved **offline mode** (which must mark every BUILT skill as "reuse-unchecked" so it's re-checked on the next online pass). |
+
+The anti-sprawl guarantee depends on this: a BUILD is only justified once a
+*successful* search found no reusable skill. "I couldn't search" must never be
+laundered into "nothing exists, so I'll build it."
+
+Then, for each candidate:
+
+1. Search installed skills and the open registry — via `find-skills` if present,
+   otherwise `npx skills find <query>` plus the https://skills.sh leaderboard.
 2. Decide and record one of: **REUSE** (install an existing skill — note the
    package), **EXTEND** (existing skill + a thin repo-specific overlay),
    **BUILD** (genuinely bespoke — author it), or **REJECT** (score too low).
@@ -205,8 +279,11 @@ replaces a weaker self dry-run. See `references/adversarial-review.md`.
 
 ### Phase 6 — Compose (mine the agents)
 
+> **Skipped entirely under `--no-agents` / `--skills-only`.** Default is to run it.
+
 Skills are capabilities; agents are *roles that wield them*. Compose agent
-definitions that bind the mined skills into a team. Typical roster for a repo:
+definitions (personas) that bind the mined skills into specialists. Typical
+roster for a repo:
 
 - **Implementer** — builds features using the architecture + convention skills.
 - **Fixer** — diagnoses and repairs using the debugging + test skills.
@@ -214,10 +291,32 @@ definitions that bind the mined skills into a team. Typical roster for a repo:
 - **Migrator/Operator** — runs the build/deploy/migration skills safely.
 
 Use `references/templates/agent-template.md`. Each agent names the specific
-skills it loads, its tools, and its operating procedure. The point is
-specificity: a generic "reviewer" is weak; a reviewer that loads *this repo's*
-convention and security skills reviews like a senior engineer who's worked here
+skills it loads, its neutral **capabilities** (read/edit/search/run — *not*
+harness tool names), and its operating procedure. Concrete `tools`/`model` fields
+are emitted **only** in a target-harness overlay, never in the portable
+definition — see `references/cross-harness.md`. The point is specificity: a
+generic "reviewer" is weak; a reviewer that loads *this repo's* convention and
+security skills reviews like a senior engineer who's worked here
 for years.
+
+#### Team composition (default on; skipped under `--no-team`)
+
+Four good specialists are not yet a team. Unless `--no-team` is set, wire them
+into a workflow: define **who hands off to whom** and **in what order** for the
+common jobs. A typical loop:
+
+```
+Implementer ──(diff)──▶ Reviewer ──(findings)──▶ Fixer ──(patch)──▶ Reviewer ✓
+                                                       │
+                            Migrator/Operator ◀──(schema/deploy change)──┘
+```
+
+For each persona record its **triggers** (when it's invoked), its **inputs** and
+**outputs** (what it receives and hands off), and its **escalation** (when it
+kicks work to another persona or back to a human). Capture this as the **team
+manifest** (next phase, in the report) so the roster is runnable, not just a
+list. The manifest is the artifact that makes "drive improvements *as a team*"
+real instead of aspirational.
 
 ### Phase 7 — Verify & Report
 
@@ -231,6 +330,10 @@ A mined skill is a hypothesis until it's proven. Verify:
 - Write `SKILLS_MINED.md` from `references/templates/report-template.md`: the
   candidate table with scores and decisions, install instructions, and a short
   "next mining pass" list of deferred candidates.
+- **Include the team manifest** (unless `--no-team`/`--no-agents`): the roster,
+  each persona's loaded skills, and the handoff order from Phase 6.
+- **State what was excluded.** If `--no-agents` or `--no-team` was set, say so in
+  the report so a reader knows the agents/team were skipped by choice, not missed.
 
 Then tell the user what to install and how (`npx skills add ...` or copy into
 their harness skills dir — see `references/cross-harness.md`).
@@ -275,5 +378,8 @@ Before declaring done:
 - [ ] Each BUILT skill has valid frontmatter and a trigger-rich description.
 - [ ] Each skill shows real repo commands/paths, not generic advice.
 - [ ] Reused skills are named with their source package.
-- [ ] Agents name the specific skills they load.
+- [ ] *(unless `--no-agents`)* Agents name the specific skills they load.
+- [ ] *(unless `--no-team`/`--no-agents`)* The team manifest lists the roster,
+      each persona's skills, and the handoff order.
+- [ ] Any excluded output (`--no-agents`/`--no-team`) is noted in the report.
 - [ ] Install instructions are present and correct for the user's harness.
