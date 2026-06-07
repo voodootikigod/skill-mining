@@ -47,38 +47,68 @@ never silently builds a duplicate.
 
 ## Use
 
-Invoke the skill against a repo:
+You can run skill-mining either **programmatically via CLI** in your terminal, or **conceptually** inside any agent harness loading the skill.
+
+### 1. Programmatically via CLI (npx)
+
+Run `npx skill-mining mine` directly inside any repository. It scans the files, runs the mining loop, and generates all artifacts on demand without needing a local install.
+
+First, set your LLM API key (Gemini is default; OpenAI and Anthropic are also supported):
+
+```bash
+# Set your API key
+export GEMINI_API_KEY="your-gemini-api-key"
+
+# Run the CLI in the current directory
+npx skill-mining mine
+```
+
+For other providers:
+```bash
+# OpenAI
+export OPENAI_API_KEY="your-openai-key"
+npx skill-mining mine --provider openai
+
+# Anthropic
+export ANTHROPIC_API_KEY="your-anthropic-key"
+npx skill-mining mine --provider anthropic
+```
+
+
+
+### 2. Inside an Agent Harness
+
+If you installed this as an agent skill, simply prompt your agent:
 
 ```
 mine this repo for skills
 ```
 
-It runs a seven-phase loop with two adversarial gates — **Survey → Detect →
-Score → ⟂Challenge → Dedupe → Author → ⟂Red-team → Compose → Verify & Report** —
-and writes:
+---
 
-1. **Mined skills** — one `SKILL.md` per kept candidate.
-2. **Mined agents** — persona definitions (implementer, fixer, reviewer,
-   migrator) that compose the skills, **plus a team manifest** that wires them
-   into a handoff workflow so they operate as a team, not a bag of agents.
-3. **`SKILLS_MINED.md`** — a report with every candidate, its leverage score, and
-   the reuse-vs-build decision.
+### The Loop & Outputs
 
-The core idea: **reuse before you build.** Most candidates should resolve to an
-existing community skill. The few that are genuinely bespoke and high-leverage
-become new, repo-specific skills.
+The loop executes a seven-phase process with two adversarial gates — **Survey → Detect → Score → ⟂Challenge → Dedupe → Author → ⟂Red-team → Compose → Verify & Report** — and writes:
 
-### Options
+1. **Mined skills** — one `SKILL.md` per kept candidate written to `.agents/skills/<name>/SKILL.md`.
+2. **Mined agents** — persona definitions (implementer, fixer, reviewer, migrator) written to `.agents/agents/<name>.md`.
+3. **`SKILLS_MINED.md`** — a synthesis report in the root with the ledger, fingerprints, and the **team manifest** wiring the handoff loop.
 
-Defaults give you the full output; flags only remove work:
+### CLI & Agent Options
 
-| Flag | Effect |
+Defaults give you the full output (skills + agents + team manifest). Flags only *remove* work:
+
+| Flag / Option | Effect |
 |---|---|
-| *(none)* | Skills **and** agents, composed **as a team**. |
-| `--no-agents` (`--skills-only`) | Mine skills only; skip agents + team. |
+| *(none)* | Mine skills **and** agents, composed **as a team**. |
+| `--no-agents` / `--skills-only` | Mine skills only; skip agents + team. |
 | `--no-team` | Build agent personas, but standalone — no handoffs/manifest. |
-| `--agents-only` | Recompose agents + team from already-mined skills. |
-| `--report-only` | Re-emit the report; author nothing. |
+| `--agents-only` | Recompose agents + team from already-mined skills (requires previous run). |
+| `--report-only` | Re-emit `SKILLS_MINED.md` report from prior results; author nothing. |
+| `--offline` | Allow registry search failure during deduplication (marks skills as `reuse-unchecked`). |
+| `--provider <name>` | Force LLM provider (`gemini`, `openai`, or `anthropic`). |
+| `--model <name>` | Force LLM model name. |
+| `--help` | Show CLI help text. |
 
 ## What's in here
 

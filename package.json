@@ -1,0 +1,25 @@
+{
+  "name": "skill-mining",
+  "version": "1.2.0",
+  "description": "Mine skills and agents from a codebase as durable, reusable SKILL.md artifacts",
+  "type": "module",
+  "bin": {
+    "skill-mining": "./bin/cli.js",
+    "mine-skills": "./bin/cli.js",
+    "mine": "./bin/cli.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "skill-mining/"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT",
+  "author": "Chris Williams (@voodootikigod)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/voodootikigod/skill-mining.git"
+  }
+}
