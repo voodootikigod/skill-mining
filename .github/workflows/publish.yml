@@ -1,6 +1,9 @@
 name: Publish to npm
 
 on:
+  push:
+    tags:
+      - 'v*'
   release:
     types: [published]
   workflow_dispatch:
@@ -31,11 +34,14 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
           TAG_NAME: ${{ github.event.release.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           if [ -n "$INPUT_VERSION" ]; then
             VERSION="$INPUT_VERSION"
-          else
+          elif [ -n "$TAG_NAME" ]; then
             VERSION="${TAG_NAME#v}"
+          else
+            VERSION="${REF_NAME#v}"
           fi
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
