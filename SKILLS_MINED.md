@@ -6,7 +6,7 @@
 
 - Candidates considered: **2**
 - Built: **2** · Reused: **0** · Extended: **0** · Rejected: **0**
-- Agents composed: **0 (omitted)**
+- Agents composed: **0**
 
 ## Candidate ledger
 
@@ -15,8 +15,8 @@ Scores shown are *post–Gate A* (after the independent skeptic re-scored).
 
 | Candidate | Type | Freq | Lev | Bsp | Stab | Ver | Decision | Gate A objection / Source |
 |---|---|:--:|:--:|:--:|:--:|:--:|---|---|
-| ecosystem-skill-deduplication | skill | 5 | 5 | 5 | 5 | 5 | **BUILD** | **Gate B** @ 2026-06-06: used cold vs "Verify that the skill deduplication process correctly honors the `--offline` CLI flag in [bin/cli.js](file:///Users/voodootikigod/Projects/skill-mining/bin/cli.js) to filter out duplicate ecosystem skills locally without making network requests." → FIX; applied fixes for: Stray developer execution logs and command history (lines 1-15) are included at the very beginning of the SKILL.md file before the frontmatter., The skill does not describe how duplicate ecosystem skills are filtered out 'locally' when using the --offline flag, nor does it specify any local registry cache or database file used for this process., The verification section lacks instructions on how to confirm that network requests are actually prevented/bypassed when `--offline` is passed., The verification step to 'simulate network failure' is ambiguous and does not provide a concrete method to trigger/simulate the failure reliably. |
-| gate-b-red-team-verification | skill | 5 | 5 | 5 | 5 | 5 | **BUILD** | **Gate B** @ 2026-06-06: used cold vs "Verify that the Gate B red-team verification implementation in `src/phases.js` complies with the cold trial protocols defined in `skill-mining/references/adversarial-review.md`." → FIX; applied fixes for: The skill file contains absolute file paths (e.g., `file:///Users/voodootikigod/Projects/skill-mining/...`) which are non-portable and will fail to resolve correctly on other users' machines., Option 2, Step 3 ('Spawn a clean-context subagent...') does not specify the exact tool or method to spawn the subagent (e.g., using `invoke_subagent` tool or a specific command)., Option 2, Step 4 instructs to 'Pass only the skill file', but the test task requires analyzing other files (`src/phases.js` and `adversarial-review.md`). A cold-loaded agent cannot complete the task if it is denied access to the files under test., The Verification section checks if Gate B is logged in `SKILLS_MINED.md` using `grep`, which only proves that the loop ran at some point, rather than verifying that the currently authored skill actually functions or is correct. |
+| ecosystem-skill-deduplication | skill | 5 | 5 | 5 | 5 | 5 | **BUILD** | **Gate B** @ 2026-06-06: used cold vs "Verify that the skill deduplication process correctly honors the `--offline` CLI flag in [bin/cli.js](file:///Users/voodootikigod/Projects/skill-mining/bin/cli.js) to filter out duplicate ecosystem skills locally without making network requests." → FIX |
+| gate-b-red-team-verification | skill | 5 | 5 | 5 | 5 | 5 | **BUILD** | **Gate B** @ 2026-06-06: used cold vs "Verify that the Gate B red-team verification implementation in `src/phases.js` complies with the cold trial protocols defined in `skill-mining/references/adversarial-review.md`." → FIX |
 
 ## Built / reused skills — with identity
 
@@ -39,44 +39,40 @@ list. No single-file blob hashes, no package-lock hashes.
 **Reuse-check status (required for BUILT/EXTENDED rows).** A BUILD is only
 justified by a *successful* search that found no reusable skill. Record one of:
 
-- **ecosystem-skill-deduplication**: `reuse-checked: ecosystem-skill-deduplication via npx skills find @ 2026-06-06T21:16:16.927Z → no match`
-- **gate-b-red-team-verification**: `reuse-checked: gate-b-red-team-verification via npx skills find @ 2026-06-06T21:17:31.714Z → no match`
+- `reuse-checked: ecosystem-skill-deduplication via npx skills find @ 2026-06-06T21:16:16.927Z → no match`
+- `reuse-checked: gate-b-red-team-verification via npx skills find @ 2026-06-06T21:17:31.714Z → no match`
 
 Per-skill **file manifest** (required for every row — this *is* the recorded file
 list partial modes compare against). The whole-directory fingerprint is the hash
 of this manifest:
 
 ```
-# ecosystem-skill-deduplication — manifest @ 2026-06-07T17:18:54.374Z
-SKILL.md                      sha256:1c3d4f50674fe41b85a237e151cddca8fbf812cf67a5d5705c567505f0b37e7e
+# ecosystem-skill-deduplication — manifest @ 2026-06-07T21:20:43.522Z
+SKILL.md   sha256:1c3d4f50674fe41b85a237e151cddca8fbf812cf67a5d5705c567505f0b37e7e
 # fingerprint = sha256(sorted lines above) = sha256:ec2387be40f2e5df85651156887934ac5bef7f3cfc1999afef6d80e8b2b53c07
 ```
 
 ```
-# gate-b-red-team-verification — manifest @ 2026-06-07T17:18:54.376Z
-SKILL.md                      sha256:269df8915c9005a4abc5ec6426cb3d31c2571302ea20e172c806b1d83f1ae1b4
+# gate-b-red-team-verification — manifest @ 2026-06-07T21:20:43.523Z
+SKILL.md   sha256:269df8915c9005a4abc5ec6426cb3d31c2571302ea20e172c806b1d83f1ae1b4
 # fingerprint = sha256(sorted lines above) = sha256:bb9f323a360dc4d235339b5f8194ef99bd99e1d301ce71b5b2b9b53161b052e3
 ```
 
-A `--agents-only` / `--report-only` run **re-derives this manifest from disk** and
-rejects the report if the manifest is absent, a listed file is missing/changed, or
-a new file appears that isn't listed.
-
 ## Composed agents
 
-*Section omitted: Agent composition was skipped via `--no-agents`.*
+> Composed agents section omitted (run with `--skills-only` / no agents chosen).
 
 ## Team manifest
 
-*Section omitted: Team manifest was skipped via `--no-team`.*
+> Team manifest section omitted (run with `--no-team` / no agents chosen).
 
 ## Reused / Extended
 
-*No reused or extended skills in this pass.*
+None.
 
 ## Deferred — next mining pass
 
-*No deferred candidates in this pass.*
+None.
 
 ## How to install
 

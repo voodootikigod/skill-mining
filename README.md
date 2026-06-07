@@ -49,7 +49,11 @@ never silently builds a duplicate.
 
 You can run skill-mining either **programmatically via CLI** in your terminal, or **conceptually** inside any agent harness loading the skill.
 
-### 1. Programmatically via CLI (npx)
+### 1. Programmatically via CLI
+
+You can run skill-mining programmatically in two ways:
+
+#### Option A: Zero-Install via npx (Recommended)
 
 Run `npx skill-mining mine` directly inside any repository. It scans the files, runs the mining loop, and generates all artifacts on demand without needing a local install.
 
@@ -73,6 +77,28 @@ npx skill-mining mine --provider openai
 export ANTHROPIC_API_KEY="your-anthropic-key"
 npx skill-mining mine --provider anthropic
 ```
+
+#### Option B: From a Local Clone / Source Checkout
+
+If you want to run the tool from source (e.g., to inspect code, make local modifications, or run offline), clone the repository and run the CLI directly using Node.js:
+
+```bash
+# Clone the repository
+git clone https://github.com/voodootikigod/skill-mining.git
+cd skill-mining
+
+# Set your API key
+export GEMINI_API_KEY="your-gemini-api-key"
+
+# Run the CLI, specifying the path to your target repository
+node bin/cli.js mine /path/to/target-repository
+```
+
+You can pass the same options (like `--provider`, `--model`, or `--offline`) to `node bin/cli.js`. For example:
+```bash
+node bin/cli.js mine /path/to/target-repository --provider openai
+```
+
 
 
 
