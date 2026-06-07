@@ -14,7 +14,7 @@ export const colors = {
 
 // Help text to display when requested
 export const HELP_TEXT = `
-${colors.bold("SKILL MINING CLI v1.2.0")}
+${colors.bold("SKILL MINING CLI v1.3.0")}
 Point an agent at a codebase, extract latent skills and agents as durable artifacts.
 
 ${colors.bold("Usage:")}
