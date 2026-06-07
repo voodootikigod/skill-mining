@@ -4,9 +4,9 @@
   "description": "Mine skills and agents from a codebase as durable, reusable SKILL.md artifacts",
   "type": "module",
   "bin": {
-    "skill-mining": "./bin/cli.js",
-    "mine-skills": "./bin/cli.js",
-    "mine": "./bin/cli.js"
+    "skill-mining": "bin/cli.js",
+    "mine-skills": "bin/cli.js",
+    "mine": "bin/cli.js"
   },
   "files": [
     "bin/",
