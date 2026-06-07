@@ -1,2 +1,4 @@
-# Draft blog post — lives here for authoring, not part of the published skill
 blog/
+node_modules/
+.DS_Store
+package-lock.json
