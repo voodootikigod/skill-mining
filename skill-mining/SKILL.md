@@ -1,20 +1,18 @@
 ---
 name: skill-mining
 description: >-
-  Use when you want to extract reusable agent skills and agent definitions from
-  an existing codebase — "mine this repo for skills", "what skills should we
-  build from this project", "turn our patterns into skills", standardizing team
-  practices, onboarding agents to a project, or building a skill/agent
-  portfolio. Reviews a codebase, scores candidate skills by leverage, dedupes
-  against the existing ecosystem (reuse vs build), authors SKILL.md files, and
-  composes agent definitions that orchestrate them into an implementation team.
+  Extract, mine, and generate agent skills from a codebase or repo. Build a
+  skills portfolio: scan code, score skill candidates by leverage, dedupe
+  reuse-vs-build, author SKILL.md files, and compose agent definitions. Use for
+  skill mining, standardizing team practices, and onboarding agents to a project.
 license: MIT
 user-invocable: true
+keywords: [skills, agent-skills, skill-mining, codebase-analysis, portfolio]
 argument-hint: "[path-or-scope] [--no-agents] [--no-team] [--agents-only | --report-only]"
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   author: Chris Williams (@voodootikigod)
-  homepage: https://skills.sh
+  homepage: https://github.com/voodootikigod/skill-mining
 ---
 
 # Skill Mining
@@ -56,10 +54,10 @@ By the end of a run you deliver, written to the repo:
    `references/cross-harness.md`).
 2. **Mined agents** — one agent definition per role that composes the skills
    (`references/templates/agent-template.md`).
-2a. **A team manifest** (default on) — inside the report: the agent roster, the
+3. **A team manifest** (default on) — inside the report: the agent roster, the
    skills each loads, and the handoff order so the personas operate *as a team*,
    not a bag of agents.
-3. **A mining report** — `SKILLS_MINED.md` at the repo root: every candidate,
+4. **A mining report** — `SKILLS_MINED.md` at the repo root: every candidate,
    its score, the reuse-vs-build decision, and why
    (`references/templates/report-template.md`).
 
@@ -243,6 +241,11 @@ Then, for each candidate:
 2. Decide and record one of: **REUSE** (install an existing skill — note the
    package), **EXTEND** (existing skill + a thin repo-specific overlay),
    **BUILD** (genuinely bespoke — author it), or **REJECT** (score too low).
+
+Before REUSE/EXTEND, check the candidate's **security audit signal**, not just
+its install rank: `find-skills` surfaces it, and the `skills` CLI also queries it
+directly (the audit API the installer hits at install time). A skill flagged by
+the audit is not a safe REUSE regardless of how high it ranks.
 
 High bespokeness + high leverage ⇒ BUILD. Low bespokeness ⇒ REUSE/EXTEND, never
 re-implement a battle-tested community skill. This decision *is* the value of
