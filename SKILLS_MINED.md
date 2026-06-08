@@ -6,7 +6,7 @@
 
 - Candidates considered: **2**
 - Built: **2** · Reused: **0** · Extended: **0** · Rejected: **0**
-- Agents composed: **0**
+- Agents composed: **0** (skipped by user choice)
 
 ## Candidate ledger
 
@@ -33,8 +33,8 @@ list. No single-file blob hashes, no package-lock hashes.
 
 | Skill | Origin | Path | Source / version pin | Content fingerprint (whole dir) | Verification |
 |---|---|---|---|---|---|
-| ecosystem-skill-deduplication | BUILT | `.agents/skills/ecosystem-skill-deduplication/` | this repo @ `9ff7b232c7122027ef540c2b766932390fed0469` | `sha256:ec2387be40f2e5df85651156887934ac5bef7f3cfc1999afef6d80e8b2b53c07` | **Gate B** @ `2026-06-06`: used cold vs "Verify that the skill deduplication process correctly honors the `--offline` CLI flag in [bin/cli.js](file:///Users/voodootikigod/Projects/skill-mining/bin/cli.js) to filter out duplicate ecosystem skills locally without making network requests." → FIX |
-| gate-b-red-team-verification | BUILT | `.agents/skills/gate-b-red-team-verification/` | this repo @ `9ff7b232c7122027ef540c2b766932390fed0469` | `sha256:bb9f323a360dc4d235339b5f8194ef99bd99e1d301ce71b5b2b9b53161b052e3` | **Gate B** @ `2026-06-06`: used cold vs "Verify that the Gate B red-team verification implementation in `src/phases.js` complies with the cold trial protocols defined in `skill-mining/references/adversarial-review.md`." → FIX |
+| `ecosystem-skill-deduplication` | BUILT | `.agents/skills/ecosystem-skill-deduplication/` | `this repo @ 9ff7b232c7122027ef540c2b766932390fed0469` | `sha256:ec2387be40f2e5df85651156887934ac5bef7f3cfc1999afef6d80e8b2b53c07` | **Gate B** @ `2026-06-06`: used cold vs "Verify that the skill deduplication process correctly honors the `--offline` CLI flag in [bin/cli.js](file:///Users/voodootikigod/Projects/skill-mining/bin/cli.js) to filter out duplicate ecosystem skills locally without making network requests." → FIX |
+| `gate-b-red-team-verification` | BUILT | `.agents/skills/gate-b-red-team-verification/` | `this repo @ 9ff7b232c7122027ef540c2b766932390fed0469` | `sha256:bb9f323a360dc4d235339b5f8194ef99bd99e1d301ce71b5b2b9b53161b052e3` | **Gate B** @ `2026-06-06`: used cold vs "Verify that the Gate B red-team verification implementation in `src/phases.js` complies with the cold trial protocols defined in `skill-mining/references/adversarial-review.md`." → FIX |
 
 **Reuse-check status (required for BUILT/EXTENDED rows).** A BUILD is only
 justified by a *successful* search that found no reusable skill. Record one of:
@@ -47,28 +47,22 @@ list partial modes compare against). The whole-directory fingerprint is the hash
 of this manifest:
 
 ```
-# ecosystem-skill-deduplication — manifest @ 2026-06-08T13:09:09.211Z
+# ecosystem-skill-deduplication — manifest @ 2026-06-08T13:21:05.074Z
 SKILL.md   sha256:1c3d4f50674fe41b85a237e151cddca8fbf812cf67a5d5705c567505f0b37e7e
-# fingerprint = sha256(sorted lines above) = sha256:ec2387be40f2e5df85651156887934ac5bef7f3cfc1999afef6d80e8b2b53c07
 ```
 
 ```
-# gate-b-red-team-verification — manifest @ 2026-06-08T13:09:09.212Z
+# gate-b-red-team-verification — manifest @ 2026-06-08T13:21:05.075Z
 SKILL.md   sha256:269df8915c9005a4abc5ec6426cb3d31c2571302ea20e172c806b1d83f1ae1b4
-# fingerprint = sha256(sorted lines above) = sha256:bb9f323a360dc4d235339b5f8194ef99bd99e1d301ce71b5b2b9b53161b052e3
 ```
-
-A `--agents-only` / `--report-only` run **re-derives this manifest from disk** and
-rejects the report if the manifest is absent, a listed file is missing/changed, or
-a new file appears that isn't listed.
 
 ## Composed agents
 
-*Excluded: Composed agents skipped by user choice (`--no-agents`).*
+*Section omitted: Composed agents skipped by user choice.*
 
 ## Team manifest
 
-*Excluded: Team manifest skipped by user choice (`--no-team`).*
+*Section omitted: Team manifest skipped by user choice.*
 
 ## Reused / Extended
 

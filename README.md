@@ -57,11 +57,11 @@ You can run skill-mining programmatically in two ways:
 
 Run `npx skill-mining mine` directly inside any repository. It scans the files, runs the mining loop, and generates all artifacts on demand without needing a local install.
 
-First, set your LLM API key (Gemini is default; OpenAI and Anthropic are also supported):
+First, set your LLM API key (Anthropic is default; Gemini and OpenAI are also supported):
 
 ```bash
 # Set your API key
-export GEMINI_API_KEY="your-gemini-api-key"
+export ANTHROPIC_API_KEY="your-anthropic-key"
 
 # Run the CLI in the current directory
 npx skill-mining mine
@@ -69,13 +69,13 @@ npx skill-mining mine
 
 For other providers:
 ```bash
+# Gemini
+export GEMINI_API_KEY="your-gemini-api-key"
+npx skill-mining mine --provider gemini
+
 # OpenAI
 export OPENAI_API_KEY="your-openai-key"
 npx skill-mining mine --provider openai
-
-# Anthropic
-export ANTHROPIC_API_KEY="your-anthropic-key"
-npx skill-mining mine --provider anthropic
 ```
 
 #### Option B: From a Local Clone / Source Checkout
@@ -88,7 +88,7 @@ git clone https://github.com/voodootikigod/skill-mining.git
 cd skill-mining
 
 # Set your API key
-export GEMINI_API_KEY="your-gemini-api-key"
+export ANTHROPIC_API_KEY="your-anthropic-key"
 
 # Run the CLI, specifying the path to your target repository
 node bin/cli.js mine /path/to/target-repository
@@ -96,7 +96,7 @@ node bin/cli.js mine /path/to/target-repository
 
 You can pass the same options (like `--provider`, `--model`, or `--offline`) to `node bin/cli.js`. For example:
 ```bash
-node bin/cli.js mine /path/to/target-repository --provider openai
+node bin/cli.js mine /path/to/target-repository --provider gemini
 ```
 
 
@@ -132,9 +132,12 @@ Defaults give you the full output (skills + agents + team manifest). Flags only 
 | `--agents-only` | Recompose agents + team from already-mined skills (requires previous run). |
 | `--report-only` | Re-emit `SKILLS_MINED.md` report from prior results; author nothing. |
 | `--offline` | Allow registry search failure during deduplication (marks skills as `reuse-unchecked`). |
-| `--provider <name>` | Force LLM provider (`gemini`, `openai`, or `anthropic`). |
+| `--provider <name>` | Force LLM provider (`anthropic`, `gemini`, `openai`) or a local CLI agent command (`claude`, `codex`, `agy`, `gemini`). |
 | `--model <name>` | Force LLM model name. |
 | `--help` | Show CLI help text. |
+
+> [!NOTE]
+> **Local CLI Agents**: If no API keys are configured, the CLI will automatically scan for and utilize local subscription CLI agents in the following order: `agy`, `claude` (using `claude -p` fallback if stdin fails), `codex` (using `codex exec` fallback), or `gemini`.
 
 ## What's in here
 
