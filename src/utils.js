@@ -32,9 +32,9 @@ ${colors.bold("Options:")}
   -h, --help                    Show this help message.
 
 ${colors.bold("Environment Variables:")}
-  GEMINI_API_KEY                Required if using Gemini provider (default).
+  ANTHROPIC_API_KEY             Required if using Anthropic provider (default).
+  GEMINI_API_KEY                Required if using Gemini provider.
   OPENAI_API_KEY                Required if using OpenAI provider.
-  ANTHROPIC_API_KEY             Required if using Anthropic provider.
 `;
 
 // Simple argument parser

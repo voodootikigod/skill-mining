@@ -71,7 +71,9 @@ function callCliLLM(cliCmd, prompt, systemInstruction) {
     try {
       log.substep(`Stdin piping not supported by ${cliCmd}, retrying as argument...`);
       const escapedPrompt = fullPrompt.replace(/`/g, "\\`").replace(/\$/g, "\\$");
-      const stdout = execSync(`${cliCmd} "${escapedPrompt}"`, {
+      // If the command is 'claude', support the -p option if stdin fails
+      const cmdStr = (cliCmd === "claude") ? `claude -p "${escapedPrompt}"` : `${cliCmd} "${escapedPrompt}"`;
+      const stdout = execSync(cmdStr, {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
         maxBuffer: 10 * 1024 * 1024
@@ -91,12 +93,12 @@ export function configureLLM(args) {
 
   if (!provider) {
     // 1. Check API keys first
-    if (process.env.GEMINI_API_KEY) {
+    if (process.env.ANTHROPIC_API_KEY) {
+      provider = "anthropic";
+    } else if (process.env.GEMINI_API_KEY) {
       provider = "gemini";
     } else if (process.env.OPENAI_API_KEY) {
       provider = "openai";
-    } else if (process.env.ANTHROPIC_API_KEY) {
-      provider = "anthropic";
     } 
     // 2. Check if a local subscription CLI is installed
     else if (isCmdInstalled("agy")) {
