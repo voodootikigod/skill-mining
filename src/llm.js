@@ -71,8 +71,15 @@ function callCliLLM(cliCmd, prompt, systemInstruction) {
     try {
       log.substep(`Stdin piping not supported by ${cliCmd}, retrying as argument...`);
       const escapedPrompt = fullPrompt.replace(/`/g, "\\`").replace(/\$/g, "\\$");
-      // If the command is 'claude', support the -p option if stdin fails
-      const cmdStr = (cliCmd === "claude") ? `claude -p "${escapedPrompt}"` : `${cliCmd} "${escapedPrompt}"`;
+      // If the command is 'claude', support the -p option if stdin fails. For 'codex', use 'codex exec'.
+      let cmdStr;
+      if (cliCmd === "claude") {
+        cmdStr = `claude -p "${escapedPrompt}"`;
+      } else if (cliCmd === "codex") {
+        cmdStr = `codex exec "${escapedPrompt}"`;
+      } else {
+        cmdStr = `${cliCmd} "${escapedPrompt}"`;
+      }
       const stdout = execSync(cmdStr, {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
