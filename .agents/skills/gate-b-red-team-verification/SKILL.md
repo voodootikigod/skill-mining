@@ -1,20 +1,3 @@
-I will start by list-directoring the workspace directory to understand the layout and locate the referenced files.
-I will list the contents of the `skill-mining` directory to find the reference files.
-I will list the files in the `skill-mining/references` directory.
-I will read `skill-mining/references/adversarial-review.md` to understand the Gate B cold trial protocols and verification processes.
-I will search for the relevant code in `src/` to see how Gate B / Red-team is implemented or executed.
-I will list files in `src/` to see what modules/phases exist in the codebase.
-I will read lines 190 to 250 of `src/phases.js` to see the exact context of Gate B or red team implementation.
-I will search `src/phases.js` for "Gate B" or "red-team" to find how Gate B verification is run in the codebase.
-I will read the source code around Gate B implementation in `src/phases.js` to see how it operates.
-I will read the rest of the Gate B execution code in `src/phases.js` (lines 490-530) to see the details of how the FIX verdict is handled.
-I will view the `skill-mining/SKILL.md` file to see a representative example of a well-formed SKILL.md in this repository.
-I will view `package.json` to see the available scripts and dependencies in the repository.
-I will view `bin/cli.js` to see how the cli is structured and how commands are invoked.
-I will view the rest of `bin/cli.js` to see the full execution flow.
-I will view `src/utils.js` to check the parsing of command line arguments and options.
-I will run a grep search for "test" or "run" or "verify" to see if there are built-in test utilities or routines.
-I will view `src/llm.js` to see how it manages API keys and providers.
 ---
 name: gate-b-red-team-verification
 description: >-

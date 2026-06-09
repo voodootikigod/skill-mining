@@ -5,6 +5,7 @@ license: MIT
 user-invocable: true
 metadata:
   version: 1.0.0
+  internal: true
 ---
 
 # Release
