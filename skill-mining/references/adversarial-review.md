@@ -35,6 +35,14 @@ of result.
 For each surviving candidate, an independent skeptic re-examines it and must be
 *convinced to allow a BUILD*. Default verdict is REUSE or REJECT.
 
+**Blind re-score — never show the skeptic the proposer's scores.** A skeptic who
+sees the proposer's numbers anchors on them and merely nudges; one who re-derives
+from raw evidence actually re-scores. Hand it only: name, description, evidence,
+the deterministic evidence-verification flag, and the *real* ecosystem search
+output (run the reuse search **before** Gate A so bespokeness is attacked with
+search results, not model memory). Record the proposer-vs-skeptic score delta in
+the report — a high delta is signal.
+
 Skeptic prompt shape:
 
 ```
@@ -83,9 +91,18 @@ verification step actually let you confirm success. Verdict: SHIP / FIX (list th
 edits) / REJECT (skill is not meaningful).
 ```
 
-FIX findings feed back into Author. A skill that survives Gate B with concrete
-"I used it and it worked" evidence is the only kind that goes in the report as
-verified.
+FIX findings feed back into Author — **and the fixed artifact is re-red-teamed.**
+A FIX verdict is never terminal: loop fix → re-review (bounded, e.g. 2 rounds)
+until the verdict is SHIP; a skill that cannot reach SHIP is REJECTED, not
+shipped with "FIX" recorded as its verification. Ground the reviewer: pick the
+test task from a *real recent commit* (not from the skill text — that's
+circular), and give it the repo's real directory shape and script names as
+ground truth *for fact-checking only*, so wrong paths/commands are detectable
+defects rather than invisible ones.
+
+**Composed agents get the same treatment.** An agent definition that no gate ever
+read is an unverified artifact: cold-load each one ("could you operate this role
+from the definition alone?"), one fix round, drop non-SHIP agents.
 
 ## Completeness critic (at Detect — lightweight)
 

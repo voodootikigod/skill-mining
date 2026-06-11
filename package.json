@@ -16,6 +16,9 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "scripts": {
+    "test": "node --test"
+  },
   "license": "MIT",
   "author": "Chris Williams (@voodootikigod)",
   "repository": {

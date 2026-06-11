@@ -133,8 +133,16 @@ Defaults give you the full output (skills + agents + team manifest). Flags only 
 | `--report-only` | Re-emit `SKILLS_MINED.md` report from prior results; author nothing. |
 | `--offline` | Allow registry search failure during deduplication (marks skills as `reuse-unchecked`). |
 | `--provider <name>` | Force LLM provider (`anthropic`, `gemini`, `openai`) or a local CLI agent command (`claude`, `codex`, `agy`, `gemini`). |
-| `--model <name>` | Force LLM model name. |
+| `--model <name>` | Force one LLM model for every phase (sets both tiers). |
+| `--model-strong <name>` | Model for judgment-heavy phases: Detect, Gates A/B, Author, Compose. Default: `claude-sonnet-4-6` (Anthropic). |
+| `--model-fast <name>` | Model for mechanical phases: Score, Dedupe decision, team manifest. Default: `claude-haiku-4-5` (Anthropic). |
+| `--gate-model <name>` | Separate model for the adversarial gates — pointing it at a different model/family gives the gates cross-model independence from the proposer. |
 | `--help` | Show CLI help text. |
+
+The report phase uses **no model at all** — `SKILLS_MINED.md` is rendered
+deterministically from the run's structured data, and a machine-readable
+`SKILLS_MINED.json` sidecar is written next to it (partial modes read the
+sidecar instead of LLM-parsing markdown).
 
 > [!NOTE]
 > **Local CLI Agents**: If no API keys are configured, the CLI will automatically scan for and utilize local subscription CLI agents in the following order: `agy`, `claude` (using `claude -p` fallback if stdin fails), `codex` (using `codex exec` fallback), or `gemini`.

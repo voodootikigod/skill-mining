@@ -37,13 +37,27 @@ of the scores drives the reuse-vs-build decision (Phase 4).
 | High Bespokeness (4–5) **and** high Leverage (4–5) | **BUILD** — author it. |
 | High Leverage, **low** Bespokeness (1–2) | **REUSE** — install the public skill. |
 | High Leverage, mid Bespokeness (3) | **EXTEND** — public skill + thin overlay. |
-| Low Frequency **and** low Leverage | **REJECT** — log in report, don't build. |
-| Low Stability (1–2) | Defer or make the skill point at the source of truth instead of duplicating it. |
+| Mid scores across the board | **DEFER** — record a concrete `revisit-when` condition; it goes in the report's deferred list, not the build list. |
+| Low Frequency **and** low Leverage | **REJECT** — log in report with the reason, don't build. |
+| Low Stability (1–2) | **DEFER**, or make the skill point at the source of truth instead of duplicating it. |
+
+Every DEFER must carry a *revisit-when* condition ("after the v2 migration
+lands", "if this recurs 3+ more times") and every REJECT an actionable one-line
+reason — the excluded half of the ledger is what stops the next pass from
+re-mining the same dead ends.
 
 ## Guardrails
 
 - **Cap the build list.** Ship the top band (typically 5–12 skills for a repo).
-  A deferred candidate in the report is a feature, not a gap.
+  A deferred candidate in the report is a feature, not a gap. Overflow above the
+  cap defers lowest-total-score first.
+- **Watch for score inflation.** Absolute scoring in one pass drifts toward a
+  wall of 4s and 5s. If most candidates score ≥4 on every axis, the scores are
+  not discriminating — force a *comparative ranking* (order them, cut
+  top/middle/bottom bands; middle → DEFER, bottom → REJECT).
+- **Unverified evidence caps Frequency.** A candidate whose cited paths don't
+  exist in the repo (deterministic check) can't claim proven recurrence — cap
+  Frequency at 2 until the evidence is real.
 - **Bespokeness is a cost.** Every built skill is something you now maintain.
   Bias toward REUSE; BUILD only earns its keep at high leverage.
 - **Low stability is a trap.** If a "skill" will be wrong in a month, either skip

@@ -79,8 +79,10 @@ didn't pass a flag, default to the fullest output — agents and team included.
 
 **Partial modes read prior state; fail closed if it's missing.** `--agents-only`
 and `--report-only` do not re-mine — they depend on artifacts a previous full run
-left behind. Their single source of truth is **`SKILLS_MINED.md`** plus the
-installed skill directories it references.
+left behind. Their single source of truth is the structured
+**`SKILLS_MINED.json`** sidecar (every full run writes it next to
+`SKILLS_MINED.md`) plus the installed skill directories it references; a legacy
+`SKILLS_MINED.md` without the sidecar is parsed as a fallback.
 
 - `--agents-only` requires `SKILLS_MINED.md` with each skill's **path** and
   **content fingerprint** (see the report's identity table). The fingerprint
@@ -172,6 +174,12 @@ For each candidate capture: name, one-line description, the evidence in the repo
 (files/lines/commits that prove it recurs), and which type it is. Cast wide
 here — pruning happens next.
 
+**Verify the evidence deterministically.** Before scoring, check that every file
+path a candidate cites actually exists in the surveyed file list (no LLM — a
+set lookup). Fabricated evidence is the cheapest hallucination to catch; a
+candidate with unverifiable evidence is flagged, its Frequency capped, and the
+flag carried into the report.
+
 **Completeness critic.** Before moving on, run one cheap inverse pass: hand the
 candidate list and the churn/hotspot map to a fresh reviewer and ask *what high-
 leverage recurring knowledge did this sweep miss?* Anything it surfaces re-enters
@@ -201,8 +209,12 @@ candidate proceeds, an **independent, fresh-context skeptic** re-examines it wit
 the burden of proof reversed: default verdict is REUSE or REJECT, and the case
 for BUILD has to survive an attack on its recurrence evidence, its bespokeness
 ("name a public skill that already covers this"), its leverage, and its
-stability. Only survivors proceed. Record the revised scores and the strongest
-objection in the report. Full prompts and voting rules (single skeptic vs. 3 +
+stability. The review is **blind** — the skeptic never sees the proposer's
+scores (anchored review rubber-stamps) — and **grounded**: the ecosystem reuse
+search runs *before* this gate so the bespokeness attack uses real search
+output, not model memory. Only survivors proceed. Record the skeptic's blind
+re-scores, the proposer-vs-skeptic delta, and the strongest objection in the
+report. Full prompts and voting rules (single skeptic vs. 3 +
 majority/veto for safety-relevant skills) are in
 `references/adversarial-review.md`.
 
@@ -276,9 +288,13 @@ the survey, not the proposer's reasoning — to a fresh-context agent and tell i
 complete a real recent task or diff *using only the skill*. It reports every place
 the skill was ambiguous, sent it to a wrong path/command, assumed unstated
 knowledge, or couldn't be verified. Verdict: SHIP / FIX (with edits) / REJECT.
-FIX findings loop back into authoring; a skill only enters the report as
-*verified* once it survives Gate B with "I used it and it worked" evidence. This
-replaces a weaker self dry-run. See `references/adversarial-review.md`.
+FIX findings loop back into authoring **and the fixed artifact is re-red-teamed**
+— FIX is never a terminal verdict. The test task comes from a *real recent
+commit* (not from the skill text — circular), and the reviewer gets the repo's
+real directory shape and scripts as ground truth for fact-checking
+paths/commands. A skill only enters the report as *verified* once it reaches
+SHIP; one that can't within the fix budget is rejected, never shipped broken.
+This replaces a weaker self dry-run. See `references/adversarial-review.md`.
 
 ### Phase 6 — Compose (mine the agents)
 
@@ -326,13 +342,21 @@ real instead of aspirational.
 A mined skill is a hypothesis until it's proven. Verify:
 
 - **Carry forward Gate B evidence.** Each built skill should already have a
-  "used it cold, it worked" result from its red-team. If a skill skipped Gate B,
-  it is not verified — send it back.
-- **Lint the artifacts**: valid frontmatter, unique names, descriptions that
-  actually contain trigger phrases, no dangling reference links.
-- Write `SKILLS_MINED.md` from `references/templates/report-template.md`: the
-  candidate table with scores and decisions, install instructions, and a short
-  "next mining pass" list of deferred candidates.
+  "used it cold, it worked" SHIP result from its red-team. If a skill skipped
+  Gate B (or stalled at FIX), it is not verified — send it back.
+- **Lint the artifacts deterministically — fail closed.** Valid frontmatter,
+  kebab-case names matching their directories, descriptions that actually
+  contain trigger phrases, a `## Verification` section, no dangling reference
+  links, no duplicate names. A skill that fails lint after one repair round is
+  rejected, never shipped broken.
+- Write `SKILLS_MINED.md` from `references/templates/report-template.md` —
+  **rendered deterministically from the run's structured data, not by an LLM**
+  (model-rendered tables drop rows). Alongside it, write the machine-readable
+  `SKILLS_MINED.json` sidecar that partial modes load instead of re-parsing
+  markdown. Include the candidate table with scores and decisions, a coverage
+  section naming the survey's bounds, install instructions, the deferred list
+  (each with its revisit-when condition), and the rejected list (each with its
+  reason).
 - **Include the team manifest** (unless `--no-team`/`--no-agents`): the roster,
   each persona's loaded skills, and the handoff order from Phase 6.
 - **State what was excluded.** If `--no-agents` or `--no-team` was set, say so in
