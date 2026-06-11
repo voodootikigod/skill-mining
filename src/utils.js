@@ -28,7 +28,10 @@ ${colors.bold("Options:")}
   --report-only                 Re-emit SKILLS_MINED.md from prior results; author nothing.
   --offline                     Run in offline mode (allow search failures without failing closed).
   --provider <name>             Force LLM provider: gemini | openai | anthropic.
-  --model <name>                Force LLM model name.
+  --model <name>                Force one LLM model for every phase (sets both tiers).
+  --model-strong <name>         Model for judgment-heavy phases (Detect, Gates, Author, Compose).
+  --model-fast <name>           Model for mechanical phases (Score, Dedupe decision, manifest).
+  --gate-model <name>           Separate model for adversarial Gates A/B (cross-model independence).
   -h, --help                    Show this help message.
 
 ${colors.bold("Environment Variables:")}
@@ -49,6 +52,9 @@ export function parseArgs(argv) {
     offline: false,
     provider: null,
     model: null,
+    modelStrong: null,
+    modelFast: null,
+    gateModel: null,
     help: false,
   };
 
@@ -72,10 +78,22 @@ export function parseArgs(argv) {
       args.provider = argv[++i];
     } else if (arg === "--model") {
       args.model = argv[++i];
+    } else if (arg === "--model-strong") {
+      args.modelStrong = argv[++i];
+    } else if (arg === "--model-fast") {
+      args.modelFast = argv[++i];
+    } else if (arg === "--gate-model") {
+      args.gateModel = argv[++i];
     } else if (arg.startsWith("--provider=")) {
       args.provider = arg.split("=")[1];
     } else if (arg.startsWith("--model=")) {
       args.model = arg.split("=")[1];
+    } else if (arg.startsWith("--model-strong=")) {
+      args.modelStrong = arg.split("=")[1];
+    } else if (arg.startsWith("--model-fast=")) {
+      args.modelFast = arg.split("=")[1];
+    } else if (arg.startsWith("--gate-model=")) {
+      args.gateModel = arg.split("=")[1];
     } else if (arg.startsWith("-")) {
       // Unknown option
       console.warn(colors.yellow(`Warning: Unknown option "${arg}"`));
@@ -99,6 +117,20 @@ export function parseArgs(argv) {
   }
 
   return args;
+}
+
+// The only decisions a candidate may carry. Any LLM-produced decision string
+// is validated against this — an unrecognized token (case drift, "Build",
+// "REUSED") otherwise flows downstream and silently vanishes at authoring.
+export const VALID_DECISIONS = new Set(["BUILD", "REUSE", "EXTEND", "REJECT", "DEFER"]);
+
+// A package reference safe to interpolate into a copy-paste `npx skills add`
+// command. `source` comes from LLM output over untrusted repo content, so it
+// must be charset-validated before it reaches a runnable instruction.
+const PACKAGE_REF_RE = /^[\w.-]+\/[\w.-]+(@[\w.:/-]+)?$/;
+
+export function isSafePackageRef(source) {
+  return typeof source === "string" && PACKAGE_REF_RE.test(source.trim());
 }
 
 // Custom log helpers for premium console output
