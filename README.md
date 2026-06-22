@@ -120,7 +120,7 @@ The loop executes a seven-phase process with two adversarial gates — **Survey 
 2. **Mined agents** — persona definitions (implementer, fixer, reviewer, migrator) written to `.agents/agents/<name>.md`.
 3. **`SKILLS_MINED.md`** — a synthesis report in the root with the ledger, fingerprints, and the **team manifest** wiring the handoff loop.
 
-### CLI & Agent Options
+### CLI & Agent Options (`mine`)
 
 Defaults give you the full output (skills + agents + team manifest). Flags only *remove* work:
 
@@ -146,6 +146,51 @@ sidecar instead of LLM-parsing markdown).
 
 > [!NOTE]
 > **Local CLI Agents**: If no API keys are configured, the CLI will automatically scan for and utilize local subscription CLI agents in the following order: `agy`, `claude` (using `claude -p` fallback if stdin fails), `codex` (using `codex exec` fallback), or `gemini`.
+
+---
+
+### 3. Validate a single skill stub
+
+`validate` is a scoped entry point that vets one already-authored `SKILL.md` without running a full repo survey. It runs only **Dedupe + Gate B** and is designed to sit in a gated pipeline or CI.
+
+```bash
+npx skill-mining validate <path-to-SKILL.md> [options]
+```
+
+Accepts a flat `<name>.SKILL.md` file (e.g. from an ADLC lesson-foundry staging area) or a `<name>/SKILL.md` directory.
+
+**Exit codes:** `0` = SHIP (passed dedup + Gate B), `2` = gate fail (REUSE / REJECT / FIX), `1` = operational error / incomplete.
+
+| Flag / Option | Effect |
+|---|---|
+| `--json` | Print a schema-valid verdict JSON to stdout; all logs go to stderr. |
+| `--prompt-only` | Keyless mode — print each LLM prompt to stderr and pause; pipe the model's answer back to stdin on the next invocation. No API key required. |
+| `--registry <file>` | Path to a custom skills registry file (default: `skills.sh`). |
+| `--also-local <dir>` | Extra local directory to check for duplicate skills (repeatable). Defaults include `.adlc/lessons/` and `.agents/skills/`. |
+| `--install` | On a SHIP verdict, install the skill into the active harness's skills directory. |
+| `--refine` | Propose Gate B edits as a diff; prompt for approval before writing (headless: emit diff and exit 2). |
+| `--force` | Bypass the 24-hour re-validation cache and re-run from scratch. |
+| `--offline` | Allow registry search failure (marks dedup as `reuse-unchecked`). |
+| `--quiet` | Suppress non-essential output. |
+
+**Verdict JSON schema** (emitted with `--json`):
+
+```json
+{
+  "schemaVersion": "1",
+  "target": "path/to/SKILL.md",
+  "skillName": "my-skill",
+  "dedup": { "decision": "BUILD", "match": null, "sources": ["installed", "skills.sh"], "rationale": "..." },
+  "gateB": { "verdict": "SHIP", "task": "...", "evidence": "...", "missing": [] },
+  "scoring": { "frequency": 4, "leverage": 4, "bespokeness": 4, "stability": 4, "verifiability": 4, "provenanceUsed": false, "rationale": "..." },
+  "verdict": "SHIP",
+  "exitCode": 0,
+  "complete": true,
+  "notes": "..."
+}
+```
+
+Re-running `validate` on an unchanged stub returns the cached verdict instantly (24-hour TTL). Use `--force` to bypass.
 
 ## What's in here
 

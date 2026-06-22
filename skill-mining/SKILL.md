@@ -10,7 +10,7 @@ user-invocable: true
 keywords: [skills, agent-skills, skill-mining, codebase-analysis, portfolio]
 argument-hint: "[path-or-scope] [--no-agents] [--no-team] [--agents-only | --report-only]"
 metadata:
-  version: 1.1.0
+  version: 1.7.0
   author: Chris Williams (@voodootikigod)
   homepage: https://github.com/voodootikigod/skill-mining
 ---
@@ -76,6 +76,36 @@ the full output (skills + agents + team). Flags only *remove* work.
 
 Precedence: `--no-agents` implies `--no-team` (no agents ⇒ no team). If the user
 didn't pass a flag, default to the fullest output — agents and team included.
+
+### Validate mode (single-artifact)
+
+`validate` is a scoped entry point that vets one already-authored `SKILL.md`
+without running a full repo survey. Use it to gate a stub (e.g. from an ADLC
+`lesson-foundry` staging run) before merging it into the live skill registry.
+
+```
+npx skill-mining validate <path-to-SKILL.md> [--json] [--prompt-only] \
+    [--registry <file>] [--also-local <dir>...] [--install] [--refine] \
+    [--force] [--quiet] [--offline]
+```
+
+Accepts a flat `<name>.SKILL.md` file **or** a `<name>/SKILL.md` directory.
+Only runs **Dedupe + Gate B** — never Survey/Detect/Score/Author.
+Exit codes: `0` = SHIP, `2` = gate fail (REUSE / REJECT / FIX / DEFER), `1` = operational error.
+
+| Flag | Effect |
+|---|---|
+| `--json` | Schema-valid verdict JSON to stdout; logs to stderr. |
+| `--prompt-only` | Keyless: print each LLM prompt, pause for piped answer. No API key needed. |
+| `--registry <file>` | Custom registry file instead of `skills.sh`. |
+| `--also-local <dir>` | Extra local dedup source (repeatable). Defaults include `.adlc/lessons/`. |
+| `--install` | Install skill on SHIP verdict into the active harness's skills directory. |
+| `--refine` | Propose Gate B edits as a diff; prompt before writing (headless: emit diff + exit 2). |
+| `--force` | Bypass the 24-hour re-validation cache. |
+
+When the stub carries ADLC provenance frontmatter (`provenance.clusterSize`,
+`provenance.evidence[]`), the frequency/leverage/verifiability axes are derived
+from it instead of re-scored from scratch.
 
 **Partial modes read prior state; fail closed if it's missing.** `--agents-only`
 and `--report-only` do not re-mine — they depend on artifacts a previous full run
