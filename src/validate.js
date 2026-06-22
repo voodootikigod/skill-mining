@@ -1067,7 +1067,7 @@ Return a JSON object only:
           ecosystemResult = eco.results || "No matching skills found in registry.";
         }
       } catch (e) {
-        exitWithError(`Ecosystem search failed for "${skillName}" (registry unreachable or timeout).`, 1);
+        exitWithError(`Ecosystem search failed for "${skillName}" (registry unreachable or timeout).`, 3);
       }
     }
 
@@ -1230,7 +1230,7 @@ Return one sentence only.`;
           state.markdown = r.rawMarkdown || state.markdown;
           state.step = "gateB_done";
         } else {
-          exitWithError("Gate B returned empty validation results.", 1);
+          exitWithError("Gate B returned empty validation results.", 3);
         }
       }
     }

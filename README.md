@@ -159,7 +159,7 @@ npx skill-mining validate <path-to-SKILL.md> [options]
 
 Accepts a flat `<name>.SKILL.md` file (e.g. from an ADLC lesson-foundry staging area) or a `<name>/SKILL.md` directory.
 
-**Exit codes:** `0` = SHIP (passed dedup + Gate B), `2` = gate fail (REUSE / REJECT / FIX), `1` = operational error / incomplete.
+**Exit codes:** `0` = SHIP, `2` = gate fail (REUSE / REJECT / DEFER / FIX), `3` = operational error or incomplete pipeline, `1` = argument / configuration error _or_ intermediate pause in `--prompt-only` mode (awaiting your piped LLM response — run again with the answer piped to stdin).
 
 | Flag / Option | Effect |
 |---|---|
@@ -191,6 +191,27 @@ Accepts a flat `<name>.SKILL.md` file (e.g. from an ADLC lesson-foundry staging 
 ```
 
 Re-running `validate` on an unchanged stub returns the cached verdict instantly (24-hour TTL). Use `--force` to bypass.
+
+## Example output
+
+[`SKILLS_MINED.md`](./SKILLS_MINED.md) in this repository is a real output from running skill-mining against itself. It shows the candidate ledger, scores, reuse-vs-build decisions, team manifest, and install instructions.
+
+## Troubleshooting
+
+**No API key configured**
+The CLI will fall back to a locally installed subscription CLI agent (`agy`, `claude`, `codex`, or `gemini`) if no `*_API_KEY` environment variable is set. If none is found, the run will fail with a clear error. Set at least one key or install a CLI agent.
+
+**`npx skills find` fails / registry unreachable**
+The deduplication step fails closed: it exits with a `DEFER` verdict (exit code 2) rather than silently building a duplicate. Run with `--offline` to explicitly allow this (skills will be marked `reuse-unchecked` for a future re-check).
+
+**`--agents-only` fails with "missing sidecar"**
+`--agents-only` requires the `SKILLS_MINED.json` sidecar from a prior full run. If it is absent or the skills have changed since it was written, run a full pass first (drop the flag).
+
+**Validate exits with code 2**
+Exit code 2 means the skill did not receive a clean SHIP — the verdict will be `REUSE`, `REJECT`, `DEFER`, or `FIX`. `FIX` means the skill concept passed both checks but the `SKILL.md` content needs changes; run with `--refine` to see proposed edits. Run with `--json` to get the full structured verdict.
+
+**Tests write temp files to the project root**
+`npm test` creates and cleans up temporary `.SKILL.md` files in the working directory. If a test run is interrupted they may persist; they are covered by `.gitignore` (`test-*.SKILL.md`).
 
 ## What's in here
 

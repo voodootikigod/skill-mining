@@ -10,7 +10,7 @@ user-invocable: true
 keywords: [skills, agent-skills, skill-mining, codebase-analysis, portfolio]
 argument-hint: "[path-or-scope] [--no-agents] [--no-team] [--agents-only | --report-only]"
 metadata:
-  version: 1.7.0
+  version: 1.8.0
   author: Chris Williams (@voodootikigod)
   homepage: https://github.com/voodootikigod/skill-mining
 ---
@@ -91,7 +91,7 @@ npx skill-mining validate <path-to-SKILL.md> [--json] [--prompt-only] \
 
 Accepts a flat `<name>.SKILL.md` file **or** a `<name>/SKILL.md` directory.
 Only runs **Dedupe + Gate B** — never Survey/Detect/Score/Author.
-Exit codes: `0` = SHIP, `2` = gate fail (REUSE / REJECT / FIX / DEFER), `1` = operational error.
+Exit codes: `0` = SHIP, `2` = gate fail (REUSE / REJECT / DEFER / FIX), `3` = operational error or incomplete pipeline, `1` = argument / configuration error or `--prompt-only` intermediate pause (awaiting piped LLM response).
 
 | Flag | Effect |
 |---|---|

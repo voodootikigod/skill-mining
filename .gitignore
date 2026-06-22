@@ -4,4 +4,8 @@ node_modules/
 package-lock.json
 .agents/validate-cache-*.json
 .agents/validate-state-*.json
+# test artifacts left by interrupted test runs
+test-*.SKILL.md
+# internal LLM build prompts
+.claude/mine-spec.md
 
