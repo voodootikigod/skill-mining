@@ -205,7 +205,7 @@ If no commit is relevant, set commit to "none" and devise a realistic task inste
 
 // Compact ground truth so the reviewer can fact-check paths/commands instead
 // of judging internal coherence only.
-function buildGroundTruth(survey) {
+export function buildGroundTruth(survey) {
   if (!survey) return "(no repo ground truth available)";
   const pkg = survey.configs?.["package.json"] || "";
   return [
@@ -332,6 +332,8 @@ ONLY. Do not write conversational text.
       log.warn(`Skill "${skill.name}" ${reason}. Excluded (fail closed).`);
       rejectedSkills.push({
         ...skill,
+        rawMarkdown: markdown,
+        gateBVerdict: verdict,
         gateBOutcome: `Gate B @ ${dateStr}: used cold vs "${testTask}" → REJECTED (${reason})`,
       });
       continue;

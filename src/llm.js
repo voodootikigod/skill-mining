@@ -171,6 +171,10 @@ function callCliLLM(cliCmd, prompt, systemInstruction, model) {
 
 // Configures the LLM provider based on flags, environment variables, or local CLI agents
 export function configureLLM(args) {
+  const isPromptOnly = args.promptOnly && args.command === "validate";
+  if (isPromptOnly) {
+    return { provider: "prompt-only", apiKey: null, cliCmd: null, models: { strong: null, fast: null, gate: null } };
+  }
   let provider = args.provider;
   let apiKey = null;
   let cliCmd = null;
@@ -198,11 +202,15 @@ export function configureLLM(args) {
       provider = "cli";
       cliCmd = "gemini";
     } else {
-      throw new Error(
-        "No LLM configuration found.\n" +
-        "Please set an API key: GEMINI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY,\n" +
-        "OR make sure one of the local CLI agents is installed: agy, claude, codex, or gemini."
-      );
+      if (isPromptOnly) {
+        provider = "prompt-only";
+      } else {
+        throw new Error(
+          "No LLM configuration found.\n" +
+          "Please set an API key: GEMINI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY,\n" +
+          "OR make sure one of the local CLI agents is installed: agy, claude, codex, or gemini."
+        );
+      }
     }
   } else {
     // If provider is forced as a flag, check if it's a known API or local command
@@ -212,7 +220,11 @@ export function configureLLM(args) {
         cliCmd = provider;
         provider = "cli";
       } else {
-        throw new Error(`Provider CLI command "${provider}" is not installed or available in PATH.`);
+        if (isPromptOnly) {
+          provider = "prompt-only";
+        } else {
+          throw new Error(`Provider CLI command "${provider}" is not installed or available in PATH.`);
+        }
       }
     }
   }
@@ -226,8 +238,12 @@ export function configureLLM(args) {
     apiKey = process.env.ANTHROPIC_API_KEY;
   }
 
-  if (provider !== "cli" && !apiKey) {
-    throw new Error(`Provider "${provider}" requested but corresponding API key is not set in environment.`);
+  if (provider !== "cli" && provider !== "prompt-only" && !apiKey) {
+    if (isPromptOnly) {
+      provider = "prompt-only";
+    } else {
+      throw new Error(`Provider "${provider}" requested but corresponding API key is not set in environment.`);
+    }
   }
 
   // Reject malformed model names before they can reach any subprocess
@@ -292,6 +308,9 @@ export async function llmCallJson(config, prompt, systemInstruction, tier, label
 // Universal LLM call wrapper. `tier` selects the model: "strong" | "fast" | "gate".
 export async function llmCall(config, prompt, systemInstruction = "", jsonMode = false, tier = "strong") {
   const { provider, apiKey, cliCmd } = config;
+  if (provider === "prompt-only") {
+    throw new Error("Cannot make live LLM calls when running in prompt-only mode.");
+  }
   const model = resolveTierModel(config, tier);
 
   if (provider === "cli") {
