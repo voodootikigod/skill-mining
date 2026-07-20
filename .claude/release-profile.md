@@ -5,7 +5,6 @@ package: skill-mining
 versionSource: package.json
 bumpSites:
   - package.json:version
-  - src/utils.js:HELP_TEXT
 preconditions:
   - npm test
 landing: direct
@@ -37,20 +36,11 @@ verify:
 > it in the registry UI. Delete the secret only *after* it is configured, or the next publish
 > fails with no credential and no fallback.
 
-The version is embedded in the CLI's help output, not just `package.json`. Update the version
-string inside `HELP_TEXT` in `src/utils.js` (the `SKILL MINING CLI vX.Y.Z` line) to match.
-
-Two things make this the riskiest single-package release in the family:
-
-- **Nothing enforces the second site.** No test asserts the help text matches `package.json`,
-  so R4's re-read is the only thing between a bump and a CLI reporting the wrong version to
-  every user. Grep `src/utils.js` for the *old* version before committing — finding zero hits
-  is the check.
-- **The bump edits executable source, not metadata.** `src/utils.js` is real JavaScript. A
-  malformed edit inside `HELP_TEXT` — an unescaped backtick, a broken template literal — still
-  satisfies a textual version check while breaking the module at import. This is precisely why
-  R6 re-runs the tests against the post-bump tree; the pre-bump run proves nothing about the
-  file you just hand-edited.
+`package.json` is the only bump site. The CLI's help output and `--version` flag both derive
+the version from `package.json` at runtime (`PACKAGE_VERSION` in `src/utils.js`, read via
+`createRequire`), and a test asserts `HELP_TEXT` contains the `package.json` version — so a
+bump cannot leave the CLI reporting a stale version. The former second site
+(`src/utils.js:HELP_TEXT` as a hand-edited string) was retired on 2026-07-20.
 
 Publishing uses a **repo-scoped** `NPM_TOKEN` (this workflow has no protected environment), so
 the precondition asserts its presence by exact name. The retired command checked nothing at all:
