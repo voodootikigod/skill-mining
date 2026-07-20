@@ -16,25 +16,16 @@ verify:
   - '[ "$(npm view skill-mining dist-tags.latest)" = "{{version}}" ]'
 ---
 
-> ## ⛔ NOT YET CONFORMANT — `/release` will refuse this repo
+> ## ✅ CONFORMANT — migrated 2026-07-20
 >
-> Audited 2026-07-16. The Standard requires a human-approved deployment and OIDC trusted
-> publishing. This repo fails Step 1 on:
+> The publish job is bound to the `npm-publish` environment (required reviewer:
+> voodootikigod), the repo-scoped `NPM_TOKEN` is deleted, and publishing uses OIDC
+> trusted publishing. **First successful OIDC publish: v1.10.0 on 2026-07-20**,
+> approved by voodootikigod, provenance attestation verified on the registry — Step 8's
+> trusted-publisher question is answered by that record.
 >
-> - **No environment gate.** `publish.yml`'s publish job has no `environment:` key, so
->   nothing pauses for a reviewer.
-> - **Live repo-scoped `NPM_TOKEN`.** Readable by every job in the repo.
->
-> **Migration (a separate change from this profile — do not do it during a release):**
->
-> 1. Create a `npm-publish` environment with at least one required reviewer.
-> 2. Add `environment: npm-publish` to the publish job.
-> 3. Configure trusted publishing for `skill-mining` on npmjs.com.
-> 4. Delete the repo-scoped `NPM_TOKEN` secret.
->
-> The npmjs.com trusted-publisher configuration cannot be automated from here — a human must do
-> it in the registry UI. Delete the secret only *after* it is configured, or the next publish
-> fails with no credential and no fallback.
+> Note: the environment currently allows admin bypass of review. R1 forbids using it,
+> but it is not enforced by config — tighten in the environment settings if desired.
 
 `package.json` is the only bump site. The CLI's help output and `--version` flag both derive
 the version from `package.json` at runtime (`PACKAGE_VERSION` in `src/utils.js`, read via
@@ -42,6 +33,7 @@ the version from `package.json` at runtime (`PACKAGE_VERSION` in `src/utils.js`,
 bump cannot leave the CLI reporting a stale version. The former second site
 (`src/utils.js:HELP_TEXT` as a hand-edited string) was retired on 2026-07-20.
 
-Publishing uses a **repo-scoped** `NPM_TOKEN` (this workflow has no protected environment), so
-the precondition asserts its presence by exact name. The retired command checked nothing at all:
-a deleted token surfaced only *after* the tag had landed, which is the expensive ordering (R8).
+The publish workflow pins Node 24 and upgrades npm before publishing — OIDC trusted
+publishing needs npm >= 11.5.1, and Node's bundled npm can lag behind that. If the
+publish step ever fails with an auth error despite a green gate, check the npm version
+in the run log before suspecting the trusted-publisher config.
