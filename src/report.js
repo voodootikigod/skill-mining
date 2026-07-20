@@ -12,6 +12,25 @@ function cell(value) {
 }
 
 /**
+ * Render a structured team manifest ({ loop, personas }) as a deterministic
+ * markdown table plus the loop description. Legacy sidecars carry the manifest
+ * as a pre-rendered string — those pass through verbatim (backward compat).
+ */
+export function renderTeamManifest(manifest) {
+  if (typeof manifest === "string") return manifest;
+  const lines = [];
+  lines.push("| Persona | Loads skills | Triggered by | Receives | Produces | Hands off to | Escalates when |");
+  lines.push("|---|---|---|---|---|---|---|");
+  for (const p of manifest.personas || []) {
+    const skills = (p.loadsSkills || []).map(s => `\`${cell(s)}\``).join(", ") || "n/a";
+    lines.push(`| ${cell(p.persona)} | ${skills} | ${cell(p.triggeredBy)} | ${cell(p.receives)} | ${cell(p.produces)} | ${cell(p.handsOffTo)} | ${cell(p.escalatesWhen)} |`);
+  }
+  lines.push("");
+  lines.push(`**Loop:** ${manifest.loop || "(not recorded)"}`);
+  return lines.join("\n");
+}
+
+/**
  * Render SKILLS_MINED.md deterministically from structured run data.
  * No LLM: the data is already structured — model-rendering the report was a
  * fidelity risk (mangled tables, dropped rows), not a capability.
@@ -120,7 +139,9 @@ export function renderReport(data) {
   } else if (!data.teamManifest) {
     push("*No team manifest (no agents composed).*");
   } else {
-    push(data.teamManifest);
+    // Structured manifests render deterministically; legacy string manifests
+    // (old sidecars) pass through verbatim.
+    push(renderTeamManifest(data.teamManifest));
   }
   push("");
 
@@ -189,6 +210,9 @@ export async function runReportPhase(targetDir, finalCandidates, verifiedSkills,
   log.phase("7", "Verify & Report (deterministic)");
 
   const absoluteTarget = path.resolve(targetDir);
+  // Artifact root (--out-dir, contract C6). Recorded in the sidecar so partial
+  // modes re-emit into the same tree; SKILLS_MINED.md/json stay at repo root.
+  const outDir = (args?.outDir || ".agents").replace(/\/+$/, "");
 
   // Lint before writing anything — fail closed on structural defects
   log.step("Linting artifacts (frontmatter, names, verification sections, dangling refs)...");
@@ -252,7 +276,7 @@ export async function runReportPhase(targetDir, finalCandidates, verifiedSkills,
   // so reconcile loudly and record it in the report's coverage bounds.
   const staleDirs = [];
   try {
-    const skillsRoot = path.join(absoluteTarget, ".agents", "skills");
+    const skillsRoot = path.join(absoluteTarget, outDir, "skills");
     const existing = await fs.readdir(skillsRoot, { withFileTypes: true });
     const currentNames = new Set(verifiedSkills.map(s => s.name));
     for (const entry of existing) {
@@ -262,7 +286,7 @@ export async function runReportPhase(targetDir, finalCandidates, verifiedSkills,
     }
     if (staleDirs.length > 0) {
       log.warn(`Stale skill directories from prior runs (not in this run's verified set — harnesses will still load them): ${staleDirs.join(", ")}`);
-      log.warn(`Remove them manually if they were rejected on purpose: rm -r .agents/skills/{${staleDirs.join(",")}}`);
+      log.warn(`Remove them manually if they were rejected on purpose: rm -r ${outDir}/skills/{${staleDirs.join(",")}}`);
     }
   } catch (err) {
     // .agents/skills does not exist yet — nothing stale
@@ -272,17 +296,17 @@ export async function runReportPhase(targetDir, finalCandidates, verifiedSkills,
   log.step("Writing skill files and computing directory fingerprints...");
   const skillDetails = [];
   for (const skill of verifiedSkills) {
-    const skillDir = path.join(absoluteTarget, ".agents", "skills", skill.name);
+    const skillDir = path.join(absoluteTarget, outDir, "skills", skill.name);
     await fs.mkdir(skillDir, { recursive: true });
     await fs.writeFile(path.join(skillDir, "SKILL.md"), skill.rawMarkdown, "utf8");
-    log.substep(`Wrote SKILL.md to .agents/skills/${skill.name}/`);
+    log.substep(`Wrote SKILL.md to ${outDir}/skills/${skill.name}/`);
 
     const fpResult = await generateSkillFingerprint(skillDir, skill.name);
     skillDetails.push({
       name: skill.name,
       origin: skill.decision,
       source: skill.source,
-      path: `.agents/skills/${skill.name}/`,
+      path: `${outDir}/skills/${skill.name}/`,
       fingerprint: fpResult.fingerprint,
       manifestText: fpResult.manifestText,
       verification: skill.verification,
@@ -294,20 +318,20 @@ export async function runReportPhase(targetDir, finalCandidates, verifiedSkills,
   const agents = [];
   if (!args.noAgents && composedAgentsResult) {
     log.step("Writing agent files...");
-    const agentsDir = path.join(absoluteTarget, ".agents", "agents");
+    const agentsDir = path.join(absoluteTarget, outDir, "agents");
     await fs.mkdir(agentsDir, { recursive: true });
     for (const agent of agentsToWrite) {
       const agentPath = path.join(agentsDir, `${agent.name}.md`);
       if (agent.rawMarkdown) {
         await fs.writeFile(agentPath, agent.rawMarkdown, "utf8");
-        log.substep(`Wrote agent definition to .agents/agents/${agent.name}.md`);
+        log.substep(`Wrote agent definition to ${outDir}/agents/${agent.name}.md`);
       } else {
         // State-loaded agent (--report-only): never advertise a persona whose
         // backing file was deleted/renamed since the prior run — stat first.
         try {
           await fs.access(agentPath);
         } catch (err) {
-          log.warn(`Agent "${agent.name}" recorded in prior state but .agents/agents/${agent.name}.md is missing — dropped from the report.`);
+          log.warn(`Agent "${agent.name}" recorded in prior state but ${outDir}/agents/${agent.name}.md is missing — dropped from the report.`);
           continue;
         }
         log.substep(`Agent "${agent.name}" carried from prior state (file present on disk)`);
@@ -327,6 +351,7 @@ export async function runReportPhase(targetDir, finalCandidates, verifiedSkills,
   const data = {
     repoName: path.basename(absoluteTarget),
     scope: targetDir,
+    outDir,
     date: new Date().toISOString().split("T")[0],
     headCommit: survey?.git?.headCommit || null,
     exclusions,

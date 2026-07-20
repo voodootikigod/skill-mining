@@ -3,6 +3,11 @@ import { log } from "./utils.js";
 
 const KEBAB_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
+// A description that never says when to load the skill is undiscoverable —
+// length alone doesn't prove trigger-richness. The skill template's own
+// description style ("Use when ...") must pass this.
+const TRIGGER_PHRASE_RE = /\b(use when|use for|when you|triggers? on)\b/i;
+
 /**
  * Minimal frontmatter parser — enough to validate the fields skill loaders
  * depend on (name, description), without a YAML dependency. Handles plain
@@ -87,6 +92,8 @@ export function lintSkillArtifact({ name, markdown, dirFiles = ["SKILL.md"] }) {
 
   if (!fm.data.description || fm.data.description.length < 20) {
     errors.push("frontmatter: `description` missing or too short to be trigger-rich (< 20 chars)");
+  } else if (!TRIGGER_PHRASE_RE.test(fm.data.description)) {
+    errors.push("frontmatter: description lacks a trigger phrase");
   }
 
   if (!fm.body || fm.body.trim().length < 100) {

@@ -105,6 +105,46 @@ test("state-loaded agent is dropped from the report when its backing file is gon
   }
 });
 
+test("--out-dir routes artifacts and is recorded in the sidecar; report stays at root", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sm-report-"));
+  try {
+    const agent = {
+      name: "reviewer",
+      loadedSkills: ["demo-skill"],
+      rawMarkdown: "---\nname: reviewer\ndescription: Reviews diffs.\n---\n\n# Reviewer\n",
+    };
+    const data = await runReportPhase(
+      dir, CANDIDATES, [makeSkill()],
+      { agents: [agent], teamManifest: null },
+      SURVEY, { noAgents: false, noTeam: false, outDir: "custom/tree" }, {}
+    );
+
+    assert.equal(data.outDir, "custom/tree");
+    assert.equal(data.skills[0].path, "custom/tree/skills/demo-skill/");
+    await fs.access(path.join(dir, "custom", "tree", "skills", "demo-skill", "SKILL.md"));
+    await fs.access(path.join(dir, "custom", "tree", "agents", "reviewer.md"));
+    await assert.rejects(fs.access(path.join(dir, ".agents")), "default tree untouched");
+
+    // Report + sidecar remain at the repo root regardless of --out-dir
+    await fs.access(path.join(dir, "SKILLS_MINED.md"));
+    const state = await loadMinedState(dir);
+    assert.equal(state.outDir, "custom/tree");
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("runReportPhase defaults outDir to .agents when args omit it", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sm-report-"));
+  try {
+    const data = await runReportPhase(dir, CANDIDATES, [makeSkill()], null, SURVEY, { noAgents: true }, {});
+    assert.equal(data.outDir, ".agents");
+    await fs.access(path.join(dir, ".agents", "skills", "demo-skill", "SKILL.md"));
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("skill lint failures still fail closed on full runs", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sm-report-"));
   try {

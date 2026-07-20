@@ -21,8 +21,8 @@ adversarial pass must be **independent**:
   "skill is inadequate." The proposer's evidence has to overcome that.
 - **Resolve, don't average.** On disagreement, the skeptic's objection stands
   until the proposer answers it with specific evidence. For high-stakes calls,
-  use 3 independent skeptics and take majority (or any-veto for safety-relevant
-  skills).
+  use 3 independent skeptics with any-REJECT veto and a 2-of-3 majority for
+  build-like verdicts (see the Gate A voting rules below).
 
 If your harness has parallel subagents, run the skeptics concurrently. If not,
 run the review in a fresh session/turn so it can't see the proposer's chain.
@@ -62,6 +62,23 @@ the single strongest objection.
 Only candidates that survive the challenge proceed to Author. Record the
 skeptic's revised scores and objection in the report — the disagreement is signal.
 
+**Voting rules (as implemented).** Every BUILD/EXTEND candidate first passes
+through a **single batch skeptic** — one blind re-score covering the whole list.
+Then a deterministic risk keyword check (security / auth / secrets / tokens /
+credentials, deploy / release / publish, payments / billing / money,
+migrations, prod / infra) flags the safety-, security-, or money-relevant
+candidates; the routing itself uses no LLM. Each flagged candidate still
+standing at BUILD/EXTEND gets **two additional independent skeptics** on the
+exact same blind payload. The three verdicts combine as:
+
+- **Any REJECT is a veto** — the candidate is rejected, with the vetoing
+  objection recorded.
+- **BUILD/EXTEND stands only with a 2-of-3 build-like majority.**
+- **Any other split defers** — no build majority means DEFER, with a
+  revisit-when condition.
+- An extra skeptic whose response can't be parsed counts as a **DEFER vote** —
+  a failed reviewer is caution, never a free pass.
+
 ## Gate B — Red-team the artifact (after Author, before Compose)
 
 **Catches:** generic, vague, wrong, or unverifiable skills. **Protects:**
@@ -92,13 +109,20 @@ edits) / REJECT (skill is not meaningful).
 ```
 
 FIX findings feed back into Author — **and the fixed artifact is re-red-teamed.**
-A FIX verdict is never terminal: loop fix → re-review (bounded, e.g. 2 rounds)
-until the verdict is SHIP; a skill that cannot reach SHIP is REJECTED, not
-shipped with "FIX" recorded as its verification. Ground the reviewer: pick the
-test task from a *real recent commit* (not from the skill text — that's
-circular), and give it the repo's real directory shape and script names as
-ground truth *for fact-checking only*, so wrong paths/commands are detectable
-defects rather than invisible ones.
+A FIX verdict is never terminal: loop fix → re-review, bounded at 2 fix rounds.
+**No fix is applied on the final round** — an edit that can't be re-reviewed
+would ship unverified, so a FIX verdict there ends the loop instead. A skill
+that cannot reach SHIP within the budget is REJECTED, not shipped with "FIX"
+recorded as its verification. Ground the reviewer: pick the test task from a
+*real recent commit* (not from the skill text — that's circular), and give it
+the repo's real directory shape and script names as ground truth *for
+fact-checking only*, so wrong paths/commands are detectable defects rather than
+invisible ones. Before **every** round, a deterministic grounding pre-check (no
+LLM) re-verifies each path and npm script the current artifact cites against
+the survey and hands the confirmed defects to the reviewer. The fixer sees the
+same facts the reviewer had — the test task, the repo ground truth, and the
+grounding findings — so path/command defects get fixed against reality instead
+of guessed at.
 
 **Composed agents get the same treatment.** An agent definition that no gate ever
 read is an unverified artifact: cold-load each one ("could you operate this role
@@ -125,7 +149,9 @@ Adversarial review is not free. Scale it to stakes:
 
 - **Always** run Gate A on BUILD candidates and Gate B on every built skill —
   these are the irreversible-ish outputs.
-- Use a **single** skeptic for ordinary skills; escalate to **3 + majority/veto**
-  only for safety-, security-, or money-relevant skills.
+- Use a **single** batch skeptic for ordinary skills; escalate to **3 +
+  majority/veto** only for safety-, security-, or money-relevant candidates.
+  The CLI routes these with a deterministic risk keyword check, so the
+  escalation decision itself costs no tokens.
 - Skip adversarial review on REUSE/REJECT candidates already settled by Gate A —
   don't re-litigate.

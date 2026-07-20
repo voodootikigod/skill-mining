@@ -7,6 +7,7 @@ import {
   log,
   colors,
   HELP_TEXT,
+  PACKAGE_VERSION,
   isSafePackageRef
 } from "../src/utils.js";
 import {
@@ -30,6 +31,9 @@ import {
   runGateB,
   runAgentGate
 } from "../src/gates.js";
+import {
+  groundSkillArtifact
+} from "../src/grounding.js";
 import {
   runReportPhase,
   loadMinedState
@@ -59,11 +63,11 @@ const SURVEY_CAPS = [
   "CI workflow files capped at 5",
 ];
 
-// Reconstruct the agent roster from .agents/agents/*.md when only a legacy
+// Reconstruct the agent roster from <outDir>/agents/*.md when only a legacy
 // report (no JSON sidecar) is available — so partial-mode re-emit reflects the
 // agent files actually on disk instead of implying an empty roster.
-async function recoverAgentsFromDisk(absoluteTarget) {
-  const agentsDir = path.join(absoluteTarget, ".agents", "agents");
+async function recoverAgentsFromDisk(absoluteTarget, outDir) {
+  const agentsDir = path.join(absoluteTarget, outDir, "agents");
   let entries;
   try {
     entries = await fs.readdir(agentsDir);
@@ -106,6 +110,11 @@ async function main() {
     process.exit(0);
   }
 
+  if (args.version) {
+    console.log(PACKAGE_VERSION);
+    process.exit(0);
+  }
+
   console.log(colors.bold(colors.cyan(`
 ╔══════════════════════════════════════════════════════════════════════╗
 ║                          SKILL MINING CLI                            ║
@@ -128,7 +137,7 @@ async function main() {
   // 2. Project survey
   let survey;
   try {
-    survey = await surveyProject(targetDir);
+    survey = await surveyProject(targetDir, { outDir: args.outDir });
   } catch (err) {
     log.error(`Project survey failed: ${err.message}`);
     process.exit(1);
@@ -139,6 +148,15 @@ async function main() {
   // ----------------------------------------------------
   if (args.agentsOnly || args.reportOnly) {
     const modeName = args.agentsOnly ? "--agents-only" : "--report-only";
+
+    // --dry-run promises "exit without writing anything to disk"; partial
+    // modes exist only to (re)write artifacts. Refuse the combination rather
+    // than silently overwriting SKILLS_MINED.md/json and <outDir>/agents/.
+    if (args.dryRun) {
+      log.error(`--dry-run cannot be combined with ${modeName}: partial modes only re-emit artifacts, and --dry-run guarantees nothing is written. Drop one of the two flags.`);
+      process.exit(1);
+    }
+
     log.info(`Running in partial mode: ${modeName}`);
 
     try {
@@ -148,6 +166,15 @@ async function main() {
       let reportedSkills;
       let priorCandidates = null;
       let priorAgents = null;
+      let extraCandidates = [];
+
+      // Artifact root: an explicitly passed --out-dir always wins. Otherwise
+      // the sidecar's recorded outDir wins over the flag DEFAULT so a re-emit
+      // lands in the tree the prior run actually wrote.
+      const outDir = args.outDirExplicit ? args.outDir : (state?.outDir || args.outDir);
+      if (state?.outDir && state.outDir !== outDir) {
+        log.warn(`--out-dir ${outDir} overrides the prior run's recorded output directory (${state.outDir}); artifacts will be written under ${outDir}/.`);
+      }
 
       if (state) {
         log.step("Loaded structured state from SKILLS_MINED.json");
@@ -163,15 +190,19 @@ async function main() {
           log.error(`Partial mode ${modeName} requires a previous full mining run. Please run a full mining pass first.`);
           process.exit(1);
         }
-        reportedSkills = await parseMinedReport(llmConfig, reportContent);
+        // parseMinedReport also extracts DEFER/REJECT rows (extraCandidates)
+        // so the reconstructed ledger doesn't silently drop them.
+        const parsed = await parseMinedReport(llmConfig, reportContent);
+        reportedSkills = parsed.skills;
+        extraCandidates = parsed.extraCandidates || [];
 
         // No sidecar — reconstruct the agent roster from the files on disk so
-        // --report-only doesn't claim "no agents" while .agents/agents/*.md
+        // --report-only doesn't claim "no agents" while <outDir>/agents/*.md
         // exist (a misrepresentation the report would otherwise make). The
         // team manifest can't be recovered from a legacy report; flag that.
-        const recovered = await recoverAgentsFromDisk(absoluteTarget);
+        const recovered = await recoverAgentsFromDisk(absoluteTarget, outDir);
         if (recovered.length > 0) {
-          log.step(`Recovered ${recovered.length} agent definition(s) from .agents/agents/ (legacy report, no sidecar)`);
+          log.step(`Recovered ${recovered.length} agent definition(s) from ${outDir}/agents/ (legacy report, no sidecar)`);
           priorAgents = {
             agents: recovered,
             teamManifest: "*Team manifest not recoverable from a legacy report (no SKILLS_MINED.json). Run a full pass to regenerate it.*",
@@ -193,8 +224,24 @@ async function main() {
         // 2. Validate policies based on origin
         const origin = (skill.origin || "").toUpperCase();
         if (origin === "BUILT" || origin === "BUILD" || origin === "EXTEND" || origin === "EXTENDED") {
-          if (!(skill.verification || "").toLowerCase().includes("gate b")) {
-            throw new Error(`Policy violation: BUILT/EXTEND skill "${skill.name}" is missing Gate B verification details.`);
+          // A Gate B mention alone is not enough — the recorded outcome must be
+          // one the gate actually shipped. For 1.7.0+ artifacts that is SHIP;
+          // v1.6.x legitimately shipped skills recording a fix-then-ship
+          // outcome (no re-review): the in-memory shape was "→ FIX; applied
+          // fixes for: …" but the LLM-rendered v1.6.x reports recorded a bare
+          // "→ FIX" with no suffix, so both legacy shapes are accepted. Any
+          // other non-SHIP line means the skill never cleared the gate and
+          // must not be re-certified by a partial mode.
+          const verification = skill.verification || "";
+          const gateBShipped = /gate b/i.test(verification)
+            && (/\bship\b/i.test(verification)
+              || /(?:→|->)\s*FIX\b/i.test(verification)
+              || /\bFIX;\s*applied fixes for:/i.test(verification));
+          if (!gateBShipped) {
+            throw new Error(
+              `Policy violation: BUILT/EXTEND skill "${skill.name}" does not record a Gate B SHIP outcome ` +
+              `(verification: "${verification || "(missing)"}"). Re-run a full mining pass.`
+            );
           }
           if (!skill.reuseCheckStatus) {
             throw new Error(`Policy violation: BUILT/EXTEND skill "${skill.name}" is missing its reuse-check status.`);
@@ -226,15 +273,19 @@ async function main() {
 
       log.success("All existing skills verified successfully (fingerprints + policies).");
 
-      // Reconstruct the candidate ledger for the regenerated report
-      const candidates = priorCandidates || reportedSkills.map(s => ({
-        name: s.name,
-        type: "skill",
-        scores: null,
-        decision: s.origin,
-        objection: s.verification,
-        source: s.source,
-      }));
+      // Reconstruct the candidate ledger for the regenerated report; legacy
+      // parses contribute their DEFER/REJECT rows too (extraCandidates)
+      const candidates = priorCandidates || [
+        ...reportedSkills.map(s => ({
+          name: s.name,
+          type: "skill",
+          scores: null,
+          decision: s.origin,
+          objection: s.verification,
+          source: s.source,
+        })),
+        ...extraCandidates,
+      ];
 
       // --report-only must re-emit the prior roster faithfully — claiming "no
       // agents" while .agents/agents/*.md exist on disk misrepresents the run
@@ -270,7 +321,7 @@ async function main() {
         verifiedSkills,
         composedAgentsResult,
         survey,
-        args,
+        { ...args, outDir },
         // lintMode "warn": these skills may predate the current lint rules —
         // re-emitting a previously valid report must not hard-fail on them
         { caps: SURVEY_CAPS, installHint: deriveInstallHint(survey), lintMode: "warn" }
@@ -304,7 +355,7 @@ async function main() {
 
     // Phase 4a: Ecosystem search BEFORE Gate A — the skeptic attacks
     // bespokeness with real search output, not model memory
-    const searchResults = searchForCandidates(calibratedCandidates, args.offline);
+    const searchResults = await searchForCandidates(calibratedCandidates, args.offline);
 
     // Gate A: blind adversarial re-score
     const challengedCandidates = await runGateA(llmConfig, calibratedCandidates, searchResults);
@@ -312,6 +363,27 @@ async function main() {
     // Phase 4b: Reuse-vs-build decision + build cap
     const dedupedCandidates = await runDedupeDecision(llmConfig, challengedCandidates, searchResults);
     const finalCandidates = enforceBuildCap(dedupedCandidates);
+
+    // --dry-run: stop before Phase 5 Author — every phase up to here is
+    // read-only, so exiting now guarantees nothing touched the disk.
+    if (args.dryRun) {
+      log.phase("5", "Dry run — candidate ledger (nothing will be written)");
+      for (const c of finalCandidates) {
+        const s = c.scores || {};
+        log.step(`${c.name} [${c.type}] → ${c.decision}`);
+        log.substep(`scores: freq=${s.freq ?? "-"} lev=${s.lev ?? "-"} bsp=${s.bsp ?? "-"} stab=${s.stab ?? "-"} ver=${s.ver ?? "-"}`);
+        if (c.objection || c.source) {
+          log.substep(`${c.objection ? `objection: ${c.objection}` : `source: ${c.source}`}`);
+        }
+      }
+      console.log(colors.bold(colors.yellow(`
+╔══════════════════════════════════════════════════════════════════════╗
+  Dry run — nothing written
+  ${finalCandidates.length} candidate(s) evaluated through dedupe + build cap
+╚══════════════════════════════════════════════════════════════════════╝
+`)));
+      process.exit(0);
+    }
 
     // Phase 5: Author (Write skills)
     const authoredSkills = await runAuthorPhase(llmConfig, finalCandidates, survey);
@@ -323,27 +395,74 @@ async function main() {
     // rejected, never shipped broken
     const verifiedSkills = [];
     for (const skill of gatePassedSkills) {
-      const linted = await lintWithRepair(llmConfig, skill);
-      if (linted.lintErrors.length === 0) {
-        verifiedSkills.push(linted);
-      } else {
+      // Same per-item fail-closed contract as authoring and Gate B: a throwing
+      // lint-repair call (e.g. output-budget truncation) must reject only this
+      // skill, never abort the run and discard every other verified skill.
+      let linted;
+      try {
+        linted = await lintWithRepair(llmConfig, skill);
+      } catch (err) {
+        log.warn(`${err.message} — lint repair failed for "${skill.name}"; excluded (fail closed).`);
+        rejectedSkills.push({ ...skill, gateBOutcome: `lint repair failed: ${err.message}` });
+        continue;
+      }
+      if (linted.lintErrors.length > 0) {
         log.warn(`Skill "${skill.name}" failed lint after repair — excluded (fail closed).`);
         rejectedSkills.push({ ...skill, gateBOutcome: `lint failed: ${linted.lintErrors.join("; ")}` });
+        continue;
       }
+      // A lint repair rewrites the markdown with an LLM AFTER Gate B verified
+      // it — re-ground the repaired text so a hallucinated path/script cannot
+      // ship under the Gate B SHIP label. SHIP requires zero code-verified
+      // grounding defects for the exact markdown that ships.
+      if (linted.rawMarkdown !== skill.rawMarkdown) {
+        const groundingDefects = groundSkillArtifact(linted.rawMarkdown, survey);
+        if (groundingDefects.length > 0) {
+          log.warn(`Skill "${skill.name}": lint repair introduced ${groundingDefects.length} grounding defect(s) — excluded (fail closed).`);
+          rejectedSkills.push({ ...skill, gateBOutcome: `lint repair introduced grounding defects: ${groundingDefects.join("; ")}` });
+          continue;
+        }
+      }
+      verifiedSkills.push(linted);
     }
 
-    // Reflect Gate B / lint rejections back into the candidate ledger
+    // Reflect Gate B / lint rejections back into the candidate ledger. A
+    // BUILD/EXTEND skill that failed authoring (per-candidate fail-closed in
+    // runAuthorPhase) never reached Gate B — record it as REJECT too, so the
+    // ledger never claims BUILD for a skill with no artifact on disk.
     const rejectedByName = new Map(rejectedSkills.map(s => [s.name, s]));
+    const authoredNames = new Set(authoredSkills.map(s => s.name));
     const ledger = finalCandidates.map(c => {
       const rejected = rejectedByName.get(c.name);
-      if (!rejected) return c;
-      return { ...c, decision: "REJECT", objection: rejected.gateBOutcome };
+      if (rejected) {
+        return { ...c, decision: "REJECT", objection: rejected.gateBOutcome };
+      }
+      if (
+        c.type === "skill"
+        && (c.decision === "BUILD" || c.decision === "EXTEND")
+        && !authoredNames.has(c.name)
+      ) {
+        return { ...c, decision: "REJECT", objection: "authoring failed (LLM call error) — excluded fail closed" };
+      }
+      return c;
     });
 
     // Phase 6: Compose (Agents + Team Manifest) + cold-load gate
     let composedAgentsResult = null;
     if (!args.noAgents) {
       composedAgentsResult = await runComposePhase(llmConfig, verifiedSkills, ledger, { noTeam: args.noTeam });
+
+      // An agent whose composition call failed (per-agent fail-closed in
+      // runComposePhase) has no artifact — record it as REJECT so the ledger
+      // never claims a build-like decision for a persona with no written file.
+      const composedNames = new Set(composedAgentsResult.agents.map(a => a.name));
+      for (let i = 0; i < ledger.length; i++) {
+        const c = ledger[i];
+        if (c.type === "agent" && c.decision !== "REJECT" && c.decision !== "DEFER" && !composedNames.has(c.name)) {
+          ledger[i] = { ...c, decision: "REJECT", objection: "agent composition failed (LLM call error) — excluded fail closed" };
+        }
+      }
+
       const { verifiedAgents, rejectedAgents } = await runAgentGate(llmConfig, composedAgentsResult.agents);
 
       // Deterministic agent lint: a drifted frontmatter name must drop the
@@ -394,7 +513,7 @@ async function main() {
     console.log(colors.bold(color(`
 ╔══════════════════════════════════════════════════════════════════════╗
   ${headline}
-  Artifacts: .agents/   ·   Report: SKILLS_MINED.md
+  Artifacts: ${args.outDir}/   ·   Report: SKILLS_MINED.md
 ╚══════════════════════════════════════════════════════════════════════╝
 `)));
 

@@ -35,7 +35,10 @@ the skill and are loaded on demand (progressive disclosure).
 | **Zed** | `.zed/skills/<name>/` |
 
 When in doubt, author into `.agents/skills/` — the neutral location most harnesses
-read — and let the package manager fan out copies.
+read — and let the package manager fan out copies. The CLI writes to `.agents/`
+by default; pass `--out-dir <dir>` to target a harness directory directly (e.g.
+`--out-dir .claude` writes `.claude/skills/<name>/` and `.claude/agents/<name>.md`).
+`SKILLS_MINED.md`/`.json` stay at the repo root either way.
 
 ## Agents and team manifests per harness
 
@@ -43,6 +46,14 @@ Skills are portable as-is. **Agent definitions are not** — `tools` and `model`
 fields are harness-specific, so a Claude-shaped agent is ignored or rejected
 elsewhere. Author the **portable core** (name, description, `loads_skills`,
 neutral `capabilities`) once, then render the harness overlay only for the target.
+
+> **Manual step / roadmap.** The CLI emits **portable definitions only**
+> (`.agents/agents/<name>.md` — no `tools`, no `model`). The harness overlays
+> below — `.claude/agents/<name>.md` with `tools`/`model` fields, the `.codex`
+> TOML role config, Cursor/Zed registrations — are a manual translation today;
+> automating them is roadmap, not shipped. Use the tables in this file as the
+> translation guide. `--out-dir` only relocates the portable artifacts into a
+> harness tree; it does not add harness-specific fields.
 
 | Harness | Where a runnable role is registered | `tools` / `model` |
 |---|---|---|

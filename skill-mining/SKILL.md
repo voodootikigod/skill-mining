@@ -10,7 +10,7 @@ user-invocable: true
 keywords: [skills, agent-skills, skill-mining, codebase-analysis, portfolio]
 argument-hint: "[path-or-scope] [--no-agents] [--no-team] [--agents-only | --report-only]"
 metadata:
-  version: 1.1.0
+  version: 1.8.0
   author: Chris Williams (@voodootikigod)
   homepage: https://github.com/voodootikigod/skill-mining
 ---
@@ -73,6 +73,11 @@ the full output (skills + agents + team). Flags only *remove* work.
 | `--no-team` | Personas are wired into a team (handoffs + manifest). | Build the agent personas, but as standalone roles — no team-composition step, no team manifest. |
 | `--agents-only` | — | Assume skills already mined; (re)compose agents + team from the existing skills. |
 | `--report-only` | — | Re-emit `SKILLS_MINED.md` from prior results; author nothing. |
+| `--out-dir <dir>` | Artifacts land under `.agents/`. | Root directory for skill/agent artifacts (e.g. `--out-dir .claude`). `SKILLS_MINED.md`/`.json` always stay at the repo root. |
+| `--dry-run` | The full loop runs and writes artifacts. | Stop after the dedupe decision + build cap: print the candidate ledger and exit without writing anything to disk. |
+
+The CLI also accepts `--offline`, the provider/model flags, and `-v`/`--version`
+(prints the CLI version and exits) — run `npx skill-mining -h` for the full list.
 
 Precedence: `--no-agents` implies `--no-team` (no agents ⇒ no team). If the user
 didn't pass a flag, default to the fullest output — agents and team included.
@@ -214,8 +219,16 @@ scores (anchored review rubber-stamps) — and **grounded**: the ecosystem reuse
 search runs *before* this gate so the bespokeness attack uses real search
 output, not model memory. Only survivors proceed. Record the skeptic's blind
 re-scores, the proposer-vs-skeptic delta, and the strongest objection in the
-report. Full prompts and voting rules (single skeptic vs. 3 +
-majority/veto for safety-relevant skills) are in
+report.
+
+For **safety-, security-, or money-relevant** candidates the escalation is
+implemented, not aspirational: a deterministic risk keyword check (security /
+auth / secrets / tokens, deploy / release / publish, payments / billing,
+migrations, prod / infra — no LLM in the routing) flags them, and any flagged
+candidate still standing at BUILD/EXTEND after the first skeptic gets **two
+additional independent skeptics** on the same blind payload. Any REJECT among
+the three vetoes the candidate; a build-like verdict stands only with a 2-of-3
+majority; any other split defers. Full prompts and voting rules are in
 `references/adversarial-review.md`.
 
 ### Phase 4 — Dedupe (reuse before you build)
@@ -248,16 +261,21 @@ laundered into "nothing exists, so I'll build it."
 
 Then, for each candidate:
 
-1. Search installed skills and the open registry — via `find-skills` if present,
-   otherwise `npx skills find <query>` plus the https://skills.sh leaderboard.
+1. Search the open registry with `npx skills find <query>` — via `find-skills`
+   if present, with the https://skills.sh leaderboard as the browsable view.
+   (This is what the CLI actually does: registry search via `npx skills find`,
+   1–2 query variants per candidate — the name, plus description keywords when
+   they differ. It does not separately enumerate skills
+   already installed in your harness — check those yourself when mining by hand.)
 2. Decide and record one of: **REUSE** (install an existing skill — note the
    package), **EXTEND** (existing skill + a thin repo-specific overlay),
    **BUILD** (genuinely bespoke — author it), or **REJECT** (score too low).
 
 Before REUSE/EXTEND, check the candidate's **security audit signal**, not just
-its install rank: `find-skills` surfaces it, and the `skills` CLI also queries it
-directly (the audit API the installer hits at install time). A skill flagged by
-the audit is not a safe REUSE regardless of how high it ranks.
+its install rank. Today this is a **manual check**: review the skill's source
+and its skills.sh listing before installing — the CLI does not query an audit
+API, and won't until the tooling exposes one. A skill flagged by an audit is
+not a safe REUSE regardless of how high it ranks.
 
 High bespokeness + high leverage ⇒ BUILD. Low bespokeness ⇒ REUSE/EXTEND, never
 re-implement a battle-tested community skill. This decision *is* the value of
@@ -274,6 +292,9 @@ For each BUILD/EXTEND candidate, write a `SKILL.md` using
 - **One job per skill.** If it needs "and" to describe, split it.
 - **Progressive disclosure.** Keep `SKILL.md` lean; push long checklists,
   tables, and examples into `references/` files the agent loads on demand.
+  Honest note: the CLI authors **single-file** `SKILL.md` artifacts — it does
+  not emit `references/` trees. The principle applies when you run this loop
+  manually in a harness; for CLI-authored skills, "lean" means a tight body.
 - **Show the repo's real commands and paths**, not generic advice. A mined skill
   earns its keep by being specific: the actual test command, the actual module
   layout, the actual gotcha.
@@ -292,7 +313,11 @@ FIX findings loop back into authoring **and the fixed artifact is re-red-teamed*
 — FIX is never a terminal verdict. The test task comes from a *real recent
 commit* (not from the skill text — circular), and the reviewer gets the repo's
 real directory shape and scripts as ground truth for fact-checking
-paths/commands. A skill only enters the report as *verified* once it reaches
+paths/commands. Before **each** review round, a deterministic grounding
+pre-check (no LLM) verifies every path and npm script the current artifact
+cites against the survey; its findings are handed to the reviewer as confirmed
+defects — not opinions it may overrule — and to the fixer alongside the same
+ground truth. A skill only enters the report as *verified* once it reaches
 SHIP; one that can't within the fix budget is rejected, never shipped broken.
 This replaces a weaker self dry-run. See `references/adversarial-review.md`.
 

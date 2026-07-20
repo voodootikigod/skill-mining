@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderReport } from "../src/report.js";
+import { renderReport, renderTeamManifest } from "../src/report.js";
 
 const DATA = {
   repoName: "demo",
@@ -82,6 +82,39 @@ test("renderReport escapes pipes/newlines in cells and survives missing fields",
   assert.match(md, /a\\\|b c/);
   assert.match(md, /npx skills add <user>\/<repo>/);
   assert.doesNotMatch(md, /HEAD:/);
+});
+
+test("renderReport renders a structured team manifest as table + loop line", () => {
+  const md = renderReport({
+    ...DATA,
+    teamManifest: {
+      loop: "implementer builds, reviewer checks, escalate to human when blocked",
+      personas: [
+        {
+          persona: "implementer", loadsSkills: ["how-tests-run"],
+          triggeredBy: "new issue", receives: "issue text", produces: "a PR",
+          handsOffTo: "reviewer", escalatesWhen: "spec is ambiguous",
+        },
+        {
+          persona: "reviewer", loadsSkills: [],
+          triggeredBy: "PR opened", receives: "diff", produces: "review verdict",
+          handsOffTo: "human", escalatesWhen: "security concern",
+        },
+      ],
+    },
+  });
+
+  assert.match(md, /\| Persona \| Loads skills \| Triggered by \| Receives \| Produces \| Hands off to \| Escalates when \|/);
+  assert.match(md, /\| implementer \| `how-tests-run` \| new issue \| issue text \| a PR \| reviewer \| spec is ambiguous \|/);
+  assert.match(md, /\| reviewer \| n\/a \| PR opened \| diff \| review verdict \| human \| security concern \|/);
+  assert.match(md, /\*\*Loop:\*\* implementer builds, reviewer checks, escalate to human when blocked/);
+});
+
+test("renderReport passes a legacy string manifest through verbatim", () => {
+  const md = renderReport({ ...DATA, teamManifest: "| Persona | ... |\nlegacy prerendered manifest" });
+  assert.match(md, /\| Persona \| \.\.\. \|\nlegacy prerendered manifest/);
+  // renderTeamManifest itself is also string-transparent
+  assert.equal(renderTeamManifest("verbatim string"), "verbatim string");
 });
 
 test("renderReport notes user-chosen exclusions", () => {

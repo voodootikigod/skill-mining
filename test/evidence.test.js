@@ -15,6 +15,14 @@ test("extractPathTokens finds paths, skips URLs/SHAs/globs/version pins", () => 
   assert.ok(!tokens.some(t => t.includes("*")), "globs excluded");
 });
 
+test("extractPathTokens drops glob tokens whole — no fragment re-matching", () => {
+  // "src/**" being consumed as one (filtered) token must not let the regex
+  // re-match the leftover "*.test.js" as a clean-looking "test.js".
+  assert.deepEqual(extractPathTokens("Test files match src/**/*.test.js"), []);
+  // Markdown emphasis around a real path is unwrapped, not dropped
+  assert.deepEqual(extractPathTokens("See **src/app.js** for details."), ["src/app.js"]);
+});
+
 test("verifyCandidateEvidence flags fabricated and unverifiable evidence", () => {
   const allPaths = ["src/llm.js", "src/phases.js", "bin/cli.js"];
   const candidates = [

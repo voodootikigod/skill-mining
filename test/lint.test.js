@@ -67,6 +67,43 @@ test("lintSkillArtifact requires a trigger-rich description", () => {
   assert.ok(errors.some(e => e.includes("description")));
 });
 
+test("lintSkillArtifact rejects a long description with no trigger phrase", () => {
+  const bad = GOOD_SKILL.replace(
+    /description: >-\n.*\n/,
+    "description: A document about the testing conventions of this repository, in detail.\n"
+  );
+  const errors = lintSkillArtifact({ name: "run-tests-here", markdown: bad });
+  assert.ok(errors.some(e => e.includes("description lacks a trigger phrase")));
+});
+
+test("lintSkillArtifact accepts each recognized trigger phrase form", () => {
+  const phrases = [
+    "Use when running tests in this repo, from the repo root.",
+    "Use for running the integration test suite in this repo.",
+    "Load this when you need to run the test suite locally.",
+    "Triggers on requests to run or debug the test suite here.",
+  ];
+  for (const desc of phrases) {
+    const md = GOOD_SKILL.replace(/description: >-\n.*\n/, `description: ${desc}\n`);
+    const errors = lintSkillArtifact({ name: "run-tests-here", markdown: md });
+    assert.ok(!errors.some(e => e.includes("trigger phrase")), `rejected: "${desc}"`);
+  }
+});
+
+test("the skill template's own description style passes the trigger-phrase lint", async () => {
+  const fs = await import("fs/promises");
+  const template = await fs.readFile(
+    new URL("../skill-mining/references/templates/skill-template.md", import.meta.url),
+    "utf8"
+  );
+  const fm = parseFrontmatter(template);
+  assert.equal(fm.ok, true);
+  // The template is placeholder-ridden (name, etc.) — only assert that its
+  // documented description style would not trip the trigger-phrase check.
+  const errors = lintSkillArtifact({ markdown: template });
+  assert.ok(!errors.some(e => e.includes("trigger phrase")));
+});
+
 test("lintSkillSet flags duplicate names", () => {
   const errors = lintSkillSet([{ name: "a" }, { name: "b" }, { name: "a" }]);
   assert.equal(errors.length, 1);

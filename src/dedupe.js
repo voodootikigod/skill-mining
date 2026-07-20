@@ -1,5 +1,8 @@
-import { execFileSync } from "child_process";
-import { log } from "./utils.js";
+import { execFile } from "child_process";
+import { promisify } from "node:util";
+import { log, mapLimit } from "./utils.js";
+
+const execFileAsync = promisify(execFile);
 
 // Warm-up gets 60s: `npx -y skills` does a cold package fetch on first use
 // (the old 10s timeout produced spurious "offline" failures that laundered
@@ -21,26 +24,33 @@ export function sanitizeQuery(query) {
   return (query || "").replace(/[^\w\s.-]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-let warmedUp = false;
+let warmupPromise = null;
 
 /**
  * Warm the npx cache once per run so per-candidate searches don't each pay
- * (or time out on) the cold-fetch cost. Failure here is non-fatal — the real
- * fail-closed decision happens per search.
+ * (or time out on) the cold-fetch cost. Concurrent searches all await the same
+ * promise, so exactly one warm-up runs and no search starts before it settles.
+ * Failure here is non-fatal — the real fail-closed decision happens per search.
  */
 export function warmupSkillsCli() {
-  if (warmedUp) return;
-  warmedUp = true;
-  try {
-    log.step("Warming up skills CLI (npx cache)...");
-    execFileSync("npx", winQuote(["-y", "skills", "--version"]), {
-      stdio: "ignore",
-      timeout: WARMUP_TIMEOUT_MS,
-      shell: IS_WINDOWS,
-    });
-  } catch (err) {
-    log.substep("Warm-up failed (will retry during search; fail-closed policy applies there)");
+  if (!warmupPromise) {
+    warmupPromise = (async () => {
+      try {
+        log.step("Warming up skills CLI (npx cache)...");
+        const pending = execFileAsync("npx", winQuote(["-y", "skills", "--version"]), {
+          timeout: WARMUP_TIMEOUT_MS,
+          shell: IS_WINDOWS,
+        });
+        // The sync version ran with stdin ignored — close it so a
+        // stdin-reading npx cannot hang until the timeout.
+        pending.child.stdin?.end();
+        await pending;
+      } catch (err) {
+        log.substep("Warm-up failed (will retry during search; fail-closed policy applies there)");
+      }
+    })();
   }
+  return warmupPromise;
 }
 
 // With shell:true Node concatenates argv with spaces and NO quoting, so a
@@ -51,20 +61,24 @@ function winQuote(args) {
   return IS_WINDOWS ? args.map(a => (/\s/.test(a) ? `"${a}"` : a)) : args;
 }
 
-// No shell on POSIX (execFileSync argv). On Windows a shell is unavoidable for
+// No shell on POSIX (execFile argv). On Windows a shell is unavoidable for
 // the npx .cmd shim, so the query is charset-sanitized before this point.
-function runSearch(query) {
-  const stdout = execFileSync("npx", winQuote(["-y", "skills", "find", sanitizeQuery(query)]), {
-    stdio: ["ignore", "pipe", "ignore"],
+async function runSearch(query) {
+  const pending = execFileAsync("npx", winQuote(["-y", "skills", "find", sanitizeQuery(query)]), {
     timeout: SEARCH_TIMEOUT_MS,
     encoding: "utf8",
     shell: IS_WINDOWS,
   });
+  // The sync version ran with stdin ignored and stderr discarded — close
+  // stdin so the child never blocks on it (stderr is captured and unused).
+  pending.child.stdin?.end();
+  const { stdout } = await pending;
   return stdout.trim();
 }
 
 /**
- * Build 2–3 search query variants for a candidate. A kebab-case internal name
+ * Build 1–2 search query variants for a candidate (name keywords, plus
+ * description keywords when present and distinct). A kebab-case internal name
  * alone almost never matches community packaging; add description keywords.
  */
 export function buildSearchQueries(candidate) {
@@ -91,8 +105,8 @@ export function buildSearchQueries(candidate) {
  *   - If offlineAllowed is true, returns { success: false, status: "offline" }
  *   - If offlineAllowed is false, throws a fail-closed error.
  */
-export function findEcosystemSkills(candidate, offlineAllowed = false) {
-  warmupSkillsCli();
+export async function findEcosystemSkills(candidate, offlineAllowed = false) {
+  await warmupSkillsCli();
 
   const queries = typeof candidate === "string"
     ? [candidate]
@@ -108,7 +122,7 @@ export function findEcosystemSkills(candidate, offlineAllowed = false) {
 
   for (const query of queries) {
     try {
-      const output = runSearch(query);
+      const output = await runSearch(query);
       ranQueries.push(query);
       sections.push(`--- query: "${query}" ---\n${output || "(no results)"}`);
     } catch (err) {
@@ -124,7 +138,8 @@ export function findEcosystemSkills(candidate, offlineAllowed = false) {
     // variant won't surface — the dedupe step must not launder it into a
     // clean "no match → BUILD".
     const partial = failedQueries.length > 0;
-    log.substep(`Search ${partial ? "partial" : "complete"} (${ranQueries.length}/${queries.length} variant(s) ran)`);
+    // Concurrent searches interleave, so the substep carries the candidate name.
+    log.substep(`Search ${partial ? "partial" : "complete"} for "${name}" (${ranQueries.length}/${queries.length} variant(s) ran)`);
     return {
       success: true,
       status: partial ? "partial" : "online",
@@ -136,7 +151,9 @@ export function findEcosystemSkills(candidate, offlineAllowed = false) {
   }
 
   if (offlineAllowed) {
-    log.substep("All search variants failed/offline. Offline mode enabled, so proceeding.");
+    // Same interleaved-log convention as the success path above: the substep
+    // must carry the candidate name so an offline slot is attributable.
+    log.substep(`All search variants failed/offline for "${name}". Offline mode enabled, so proceeding.`);
     return {
       success: false,
       status: "offline",
@@ -153,6 +170,10 @@ export function findEcosystemSkills(candidate, offlineAllowed = false) {
   );
 }
 
+// Bounds concurrent `npx skills find` subprocesses — enough to hide registry
+// latency without stampeding the registry or the local npx cache.
+const SEARCH_CONCURRENCY = 4;
+
 /**
  * Run the ecosystem search for every skill candidate that might be built.
  * Runs BEFORE Gate A so the skeptic attacks bespokeness with real search
@@ -163,23 +184,27 @@ export function findEcosystemSkills(candidate, offlineAllowed = false) {
  * to status "failed" (the dedupe decision then DEFERs it as reuse-unchecked —
  * never BUILD on a failed search), instead of aborting the batch.
  */
-export function searchForCandidates(candidates, offlineAllowed = false) {
-  const results = {};
-  let attempted = 0;
+export async function searchForCandidates(candidates, offlineAllowed = false) {
+  const eligible = candidates.filter(
+    (cand) => cand.type !== "agent" && cand.decision !== "REJECT" && cand.decision !== "DEFER"
+  );
+
+  const attempted = eligible.length;
   let failed = 0;
 
-  for (const cand of candidates) {
-    if (cand.type === "agent") continue;
-    if (cand.decision === "REJECT" || cand.decision === "DEFER") continue;
-    attempted++;
+  // The per-candidate catch lives INSIDE the mapper so one failure degrades
+  // only that slot (never aborting the batch through mapLimit's rejection).
+  const settled = await mapLimit(eligible, SEARCH_CONCURRENCY, async (cand) => {
     try {
-      results[cand.name] = findEcosystemSkills(cand, offlineAllowed);
+      return [cand.name, await findEcosystemSkills(cand, offlineAllowed)];
     } catch (err) {
       failed++;
       log.warn(`Reuse search failed for "${cand.name}" — it will be DEFERRED (reuse-check unavailable), not built.`);
-      results[cand.name] = { success: false, status: "failed", queries: [], results: "" };
+      return [cand.name, { success: false, status: "failed", queries: [], results: "" }];
     }
-  }
+  });
+
+  const results = Object.fromEntries(settled);
 
   // One transient failure degrades that candidate (handled above). But if
   // EVERY search failed in non-offline mode, the registry is provably

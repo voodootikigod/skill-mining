@@ -1,3 +1,10 @@
+import { createRequire } from "node:module";
+
+// Single source of truth for the CLI version — read from package.json so a
+// release bump never has to touch a second hardcoded site (HELP_TEXT drift).
+const require = createRequire(import.meta.url);
+export const PACKAGE_VERSION = require("../package.json").version;
+
 // ANSI Escape code helpers for terminal styling without external packages
 export const colors = {
   reset: (text) => `${text}\x1b[0m`,
@@ -14,7 +21,7 @@ export const colors = {
 
 // Help text to display when requested
 export const HELP_TEXT = `
-${colors.bold("SKILL MINING CLI v1.7.0")}
+${colors.bold(`SKILL MINING CLI v${PACKAGE_VERSION}`)}
 Point an agent at a codebase, extract latent skills and agents as durable artifacts.
 
 ${colors.bold("Usage:")}
@@ -27,11 +34,16 @@ ${colors.bold("Options:")}
   --agents-only                 Skip skills; (re)compose agents + team from existing report.
   --report-only                 Re-emit SKILLS_MINED.md from prior results; author nothing.
   --offline                     Run in offline mode (allow search failures without failing closed).
+  --out-dir <dir>               Root directory for skill/agent artifacts (default: .agents).
+                                SKILLS_MINED.md/json always stay at the repo root.
+  --dry-run                     Run detection through the dedupe decision, print the candidate
+                                ledger, and exit without writing anything to disk.
   --provider <name>             Force LLM provider: gemini | openai | anthropic.
   --model <name>                Force one LLM model for every phase (sets both tiers).
   --model-strong <name>         Model for judgment-heavy phases (Detect, Gates, Author, Compose).
   --model-fast <name>           Model for mechanical phases (Score, Dedupe decision, manifest).
   --gate-model <name>           Separate model for adversarial Gates A/B (cross-model independence).
+  -v, --version                 Print the CLI version and exit.
   -h, --help                    Show this help message.
 
 ${colors.bold("Environment Variables:")}
@@ -50,6 +62,13 @@ export function parseArgs(argv) {
     agentsOnly: false,
     reportOnly: false,
     offline: false,
+    outDir: ".agents",
+    // True only when the user passed --out-dir with a value — partial modes
+    // use this to let an explicit flag beat the sidecar's recorded outDir
+    // (the sidecar only ever beats the DEFAULT).
+    outDirExplicit: false,
+    dryRun: false,
+    version: false,
     provider: null,
     model: null,
     modelStrong: null,
@@ -64,6 +83,18 @@ export function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "-h" || arg === "--help") {
       args.help = true;
+    } else if (arg === "-v" || arg === "--version") {
+      args.version = true;
+    } else if (arg === "--dry-run") {
+      args.dryRun = true;
+    } else if (arg === "--out-dir") {
+      args.outDir = argv[++i];
+      args.outDirExplicit = true;
+    } else if (arg.startsWith("--out-dir=")) {
+      // Everything after the FIRST "=" is the value — split("=")[1] would
+      // silently truncate a directory name containing "=".
+      args.outDir = arg.slice("--out-dir=".length);
+      args.outDirExplicit = true;
     } else if (arg === "--no-agents" || arg === "--skills-only") {
       args.noAgents = true;
     } else if (arg === "--no-team") {
@@ -85,15 +116,15 @@ export function parseArgs(argv) {
     } else if (arg === "--gate-model") {
       args.gateModel = argv[++i];
     } else if (arg.startsWith("--provider=")) {
-      args.provider = arg.split("=")[1];
+      args.provider = arg.slice("--provider=".length);
     } else if (arg.startsWith("--model=")) {
-      args.model = arg.split("=")[1];
+      args.model = arg.slice("--model=".length);
     } else if (arg.startsWith("--model-strong=")) {
-      args.modelStrong = arg.split("=")[1];
+      args.modelStrong = arg.slice("--model-strong=".length);
     } else if (arg.startsWith("--model-fast=")) {
-      args.modelFast = arg.split("=")[1];
+      args.modelFast = arg.slice("--model-fast=".length);
     } else if (arg.startsWith("--gate-model=")) {
-      args.gateModel = arg.split("=")[1];
+      args.gateModel = arg.slice("--gate-model=".length);
     } else if (arg.startsWith("-")) {
       // Unknown option
       console.warn(colors.yellow(`Warning: Unknown option "${arg}"`));
@@ -116,6 +147,12 @@ export function parseArgs(argv) {
     args.noTeam = true;
   }
 
+  // A bare/empty --out-dir must not resolve artifact paths to the repo root
+  if (!args.outDir) {
+    args.outDir = ".agents";
+    args.outDirExplicit = false;
+  }
+
   return args;
 }
 
@@ -126,11 +163,33 @@ export const VALID_DECISIONS = new Set(["BUILD", "REUSE", "EXTEND", "REJECT", "D
 
 // A package reference safe to interpolate into a copy-paste `npx skills add`
 // command. `source` comes from LLM output over untrusted repo content, so it
-// must be charset-validated before it reaches a runnable instruction.
-const PACKAGE_REF_RE = /^[\w.-]+\/[\w.-]+(@[\w.:/-]+)?$/;
+// must be charset-validated before it reaches a runnable instruction. The
+// first segment may carry a single leading "@" (scoped refs: @org/repo[@ver]).
+const PACKAGE_REF_RE = /^@?[\w.-]+\/[\w.-]+(@[\w.:/-]+)?$/;
 
 export function isSafePackageRef(source) {
   return typeof source === "string" && PACKAGE_REF_RE.test(source.trim());
+}
+
+/**
+ * Bounded-concurrency map. The returned array preserves input order regardless
+ * of completion order. A rejection from fn rejects the whole call — callers
+ * whose per-item failures must not abort siblings keep their try/catch INSIDE
+ * fn (the same place the sequential loops kept it), so one item's failure
+ * resolves that slot instead of propagating.
+ */
+export async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const i = nextIndex++;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 // Custom log helpers for premium console output

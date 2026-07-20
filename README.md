@@ -131,18 +131,30 @@ Defaults give you the full output (skills + agents + team manifest). Flags only 
 | `--no-team` | Build agent personas, but standalone — no handoffs/manifest. |
 | `--agents-only` | Recompose agents + team from already-mined skills (requires previous run). |
 | `--report-only` | Re-emit `SKILLS_MINED.md` report from prior results; author nothing. |
+| `--out-dir <dir>` | Root directory for skill/agent artifacts (default: `.agents`). `SKILLS_MINED.md`/`.json` always stay at the repo root. |
+| `--dry-run` | Run detection through the dedupe decision, print the candidate ledger, and exit without writing anything to disk. |
 | `--offline` | Allow registry search failure during deduplication (marks skills as `reuse-unchecked`). |
 | `--provider <name>` | Force LLM provider (`anthropic`, `gemini`, `openai`) or a local CLI agent command (`claude`, `codex`, `agy`, `gemini`). |
 | `--model <name>` | Force one LLM model for every phase (sets both tiers). |
 | `--model-strong <name>` | Model for judgment-heavy phases: Detect, Gates A/B, Author, Compose. Default: `claude-sonnet-4-6` (Anthropic). |
 | `--model-fast <name>` | Model for mechanical phases: Score, Dedupe decision, team manifest. Default: `claude-haiku-4-5` (Anthropic). |
 | `--gate-model <name>` | Separate model for the adversarial gates — pointing it at a different model/family gives the gates cross-model independence from the proposer. |
-| `--help` | Show CLI help text. |
+| `--version` / `-v` | Print the CLI version and exit. |
+| `--help` / `-h` | Show CLI help text. |
+
+Provider model defaults: Anthropic `claude-sonnet-4-6` / `claude-haiku-4-5`,
+OpenAI `gpt-5` / `gpt-5-mini`, Gemini `gemini-2.5-pro` / `gemini-2.5-flash`.
+Reasoning-model families on OpenAI (`gpt-5`, `o*`) reject `max_tokens`, so the
+CLI sends `max_completion_tokens` for them — and if any other model rejects
+`max_tokens`, it retries once with the newer parameter name automatically.
 
 The report phase uses **no model at all** — `SKILLS_MINED.md` is rendered
 deterministically from the run's structured data, and a machine-readable
 `SKILLS_MINED.json` sidecar is written next to it (partial modes read the
-sidecar instead of LLM-parsing markdown).
+sidecar instead of LLM-parsing markdown). That includes the **team manifest**:
+the model returns it as structured data (`{ loop, personas }`, with every
+handoff target validated against the surviving agents) and the report renders
+the table deterministically — no model-rendered markdown tables.
 
 > [!NOTE]
 > **Local CLI Agents**: If no API keys are configured, the CLI will automatically scan for and utilize local subscription CLI agents in the following order: `agy`, `claude` (using `claude -p` fallback if stdin fails), `codex` (using `codex exec` fallback), or `gemini`.

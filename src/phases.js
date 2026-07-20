@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import { log, VALID_DECISIONS, isSafePackageRef } from "./utils.js";
+import { log, VALID_DECISIONS, isSafePackageRef, mapLimit } from "./utils.js";
 import { llmCall, llmCallJson, cleanJsonResponse } from "./llm.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -231,11 +231,26 @@ Return a JSON object with this exact shape:
     throw new Error("Score phase returned no parseable scores (expected JSON with a `scoredCandidates` array). Re-run, or try a different --model-fast.");
   }
 
+  // Dedupe by name BEFORE the by-name reconciliation — mirrors the seenNames
+  // guard in runDetectPhase. A duplicate scored name would otherwise survive
+  // all the way to the final report lint, which aborts the run at its most
+  // expensive point. First occurrence wins.
+  const seenScoredNames = new Set();
+  const uniqueScored = [];
+  for (const s of parsed.scoredCandidates) {
+    if (s?.name && seenScoredNames.has(s.name)) {
+      log.warn(`Score phase: duplicate scored candidate "${s.name}" — keeping the first occurrence.`);
+      continue;
+    }
+    if (s?.name) seenScoredNames.add(s.name);
+    uniqueScored.push(s);
+  }
+
   // Re-attach evidence verification flags lost in the LLM round-trip. A name
   // the LLM drifted away from has no provenance — treat it as unverified
   // (fail safe), not as implicitly verified.
   const byName = new Map(candidates.map(c => [c.name, c]));
-  const scored = parsed.scoredCandidates.map(s => {
+  const scored = uniqueScored.map(s => {
     const orig = byName.get(s.name);
     if (!orig) {
       log.warn(`Score phase: candidate "${s.name}" does not match any detected candidate name — marking evidence unverified`);
@@ -396,30 +411,29 @@ export function enforceBuildCap(candidates, cap = BUILD_CAP) {
 // ----------------------------------------------------
 // Phase 4: Dedupe decision (uses search results gathered before Gate A)
 // ----------------------------------------------------
+// Bounds concurrent dedupe-decision LLM calls (fast tier, small prompts).
+const DEDUPE_CONCURRENCY = 4;
+
 export async function runDedupeDecision(llmConfig, challengedCandidates, searchResults) {
   log.phase("4", "Dedupe (Reuse-vs-build decision)");
 
-  const finalCandidates = [];
-
-  for (const cand of challengedCandidates) {
+  const decideOne = async (cand) => {
     if (cand.type === "agent") {
-      finalCandidates.push({
+      return {
         ...cand,
         source: "this repo",
         justification: "Agent role composed of skills",
         reuseCheckStatus: "n/a",
-      });
-      continue;
+      };
     }
 
     if (cand.decision === "REJECT" || cand.decision === "DEFER") {
-      finalCandidates.push({
+      return {
         ...cand,
         source: "n/a",
         justification: cand.decision === "DEFER" ? "Deferred during scoring/challenge" : "Rejected during scoring/challenge",
         reuseCheckStatus: "n/a",
-      });
-      continue;
+      };
     }
 
     const searchResult = searchResults[cand.name];
@@ -427,15 +441,14 @@ export async function runDedupeDecision(llmConfig, challengedCandidates, searchR
       // No search ran for this candidate (e.g. it was DEFER/REJECT pre-Gate A
       // and Gate A upgraded it) — fail toward caution.
       log.warn(`No ecosystem search result for "${cand.name}" — deferring (reuse unchecked).`);
-      finalCandidates.push({
+      return {
         ...cand,
         decision: "DEFER",
         revisitWhen: "next pass with a completed reuse search",
         source: "n/a",
         justification: "Reuse search did not run for this candidate",
         reuseCheckStatus: "reuse-unchecked (no search this pass)",
-      });
-      continue;
+      };
     }
 
     // A failed or partial search is NOT "no match found". Either the whole
@@ -444,16 +457,15 @@ export async function runDedupeDecision(llmConfig, challengedCandidates, searchR
     // incomplete and a BUILD would slip past the anti-sprawl defense. Defer.
     if (searchResult.status === "failed" || searchResult.status === "partial") {
       const failed = searchResult.failedQueries?.join(" / ") || "all variants";
-      finalCandidates.push({
+      log.substep(`Final decision: DEFER (${cand.name} — reuse-check incomplete)`);
+      return {
         ...cand,
         decision: "DEFER",
         revisitWhen: "re-run when the skills registry is reachable (reuse check incomplete this pass)",
         source: "n/a",
         justification: `Reuse search incomplete (failed: ${failed}) — reuse-check unavailable, not built`,
         reuseCheckStatus: `reuse-check-incomplete (failed variants: ${failed} @ ${new Date().toISOString()})`,
-      });
-      log.substep(`Final decision: DEFER (${cand.name} — reuse-check incomplete)`);
-      continue;
+      };
     }
 
     log.step(`Deciding reuse-vs-build for: ${cand.name} (${cand.decision})`);
@@ -505,15 +517,14 @@ Return a JSON object with this exact shape:
     } catch (err) {
       // A malformed decision response must not build unchecked — defer.
       log.warn(`${err.message} — deferring "${cand.name}".`);
-      finalCandidates.push({
+      return {
         ...cand,
         decision: "DEFER",
         revisitWhen: "re-run — dedupe decision response was unparseable",
         source: "n/a",
         justification: "Dedupe decision could not be parsed",
         reuseCheckStatus,
-      });
-      continue;
+      };
     }
 
     let finalDecision = String(parsed.finalDecision || "").toUpperCase();
@@ -565,35 +576,47 @@ Return a JSON object with this exact shape:
       revisitWhen = revisitWhen || "re-run — proposed reuse source was not a valid package reference";
     }
 
-    log.substep(`Final decision: ${finalDecision} (${source})`);
+    // Concurrent candidates interleave, so the substep carries the candidate
+    // name — same convention as the DEFER branch above and the Gate B substeps.
+    log.substep(`Final decision for "${cand.name}": ${finalDecision} (${source})`);
 
-    finalCandidates.push({
+    return {
       ...cand,
       decision: finalDecision,
       source,
       justification,
       revisitWhen,
       reuseCheckStatus,
-    });
-  }
+    };
+  };
 
-  return finalCandidates;
+  // mapLimit preserves the input candidate order, so the returned ledger (and
+  // every report derived from it) stays deterministic. Pass-through rows
+  // (agents, prior REJECT/DEFER, incomplete searches) resolve synchronously
+  // inside the mapper; only rows needing an LLM decision hold a slot.
+  return mapLimit(challengedCandidates, DEDUPE_CONCURRENCY, decideOne);
 }
 
 // ----------------------------------------------------
 // Phase 5: Author (Write SKILL.md files)
 // ----------------------------------------------------
+// Bounds concurrent authoring calls — strong-tier calls with large prompts
+// and SKILL.md-sized outputs.
+const AUTHOR_CONCURRENCY = 3;
+
 export async function runAuthorPhase(llmConfig, finalCandidates, survey) {
   log.phase("5", "Author (Write the skills)");
 
   const skillTemplate = await readPackageFile("skill-mining/references/templates/skill-template.md");
-  const authoredSkills = [];
 
-  for (const cand of finalCandidates) {
-    if (cand.type !== "skill" || (cand.decision !== "BUILD" && cand.decision !== "EXTEND")) {
-      continue;
-    }
+  const toAuthor = finalCandidates.filter(
+    (cand) => cand.type === "skill" && (cand.decision === "BUILD" || cand.decision === "EXTEND")
+  );
 
+  // mapLimit preserves candidate order (slot = null for a failed authoring),
+  // so the returned array — and every report derived from it — matches the
+  // ledger order deterministically.
+  const authored = await mapLimit(toAuthor, AUTHOR_CONCURRENCY, async (cand) => {
     log.step(`Authoring SKILL.md for "${cand.name}"...`);
 
     const systemInstruction = `
@@ -637,21 +660,32 @@ Make sure to fill in:
 Write the complete markdown text.
 `;
 
-    const markdown = await llmCall(llmConfig, prompt, systemInstruction, false, "strong");
+    // Per-candidate fail-closed: an authoring failure (e.g. output-budget
+    // truncation) must skip only this candidate — the catch lives INSIDE the
+    // mapper, so a throw never aborts the batch and discards every other
+    // authored skill. The CLI reflects unauthored BUILD/EXTEND candidates
+    // back into the ledger as REJECT.
+    let markdown;
+    try {
+      markdown = await llmCall(llmConfig, prompt, systemInstruction, false, "strong");
+    } catch (err) {
+      log.warn(`${err.message} — authoring failed for "${cand.name}"; candidate excluded (fail closed).`);
+      return null;
+    }
 
-    authoredSkills.push({
+    log.substep(`Authored skill structure for "${cand.name}"`);
+
+    return {
       name: cand.name,
       decision: cand.decision,
       source: cand.source,
       justification: cand.justification,
       reuseCheckStatus: cand.reuseCheckStatus,
       rawMarkdown: markdown.trim(),
-    });
+    };
+  });
 
-    log.substep(`Authored skill structure for "${cand.name}"`);
-  }
-
-  return authoredSkills;
+  return authored.filter(Boolean);
 }
 
 // ----------------------------------------------------
@@ -704,7 +738,17 @@ ${options.noTeam ? "" : "4. Team handoffs (triggers, inputs, outputs, handoffs).
 Also return nothing but the markdown text.
 `;
 
-    const markdown = await llmCall(llmConfig, prompt, systemInstruction, false, "strong");
+    // Per-agent fail-closed: a composition failure (e.g. output-budget
+    // truncation) must drop only this agent — a throw here would abort the
+    // run at the compose phase and discard every Gate-B-verified skill. The
+    // CLI reflects uncomposed agent candidates back into the ledger as REJECT.
+    let markdown;
+    try {
+      markdown = await llmCall(llmConfig, prompt, systemInstruction, false, "strong");
+    } catch (err) {
+      log.warn(`${err.message} — composing agent "${agent.name}" failed; agent excluded (fail closed).`);
+      continue;
+    }
     const raw = markdown.trim();
 
     // Extract loads_skills from the authored definition (best effort) so the
@@ -733,13 +777,21 @@ Also return nothing but the markdown text.
  * Compose the team manifest from the agents that SURVIVED the cold-load gate
  * and lint — composing it earlier (inside runComposePhase) baked dropped
  * agents into the handoff loop, advertising personas with no written file.
+ *
+ * Returns a STRUCTURED manifest { loop, personas } (rendered deterministically
+ * by report.js), or null when there are no surviving agents — or when the
+ * model's response is unusable, since the manifest is enrichment, not
+ * load-bearing. Every handoff target is validated against the surviving agent
+ * names; anything else is replaced with "human" so the report never advertises
+ * a handoff to a persona with no written file.
  */
 export async function composeTeamManifest(llmConfig, survivingAgents, verifiedSkills) {
   if (survivingAgents.length === 0) {
-    return "";
+    return null;
   }
 
   log.step("Composing team manifest workflow (from gate-surviving agents)...");
+  const agentNames = survivingAgents.map(a => a.name);
   const manifestPrompt = `
 Given these composed agents (the ONLY agents that exist — do not reference any other persona):
 ${JSON.stringify(survivingAgents.map(a => ({ name: a.name, description: a.description, loadedSkills: a.loadedSkills })), null, 2)}
@@ -747,16 +799,91 @@ ${JSON.stringify(survivingAgents.map(a => ({ name: a.name, description: a.descri
 And these verified skills:
 ${JSON.stringify(verifiedSkills.map(s => ({ name: s.name })), null, 2)}
 
-Create a markdown table for the Team Manifest.
-It must list: Persona, Loads skills, Triggered by, Receives, Produces, Hands off to (payload — proceed-when), Escalates when.
-Every handoff target must be one of the listed agents (or "human").
-Also include the "Handoff loop" description (e.g. Implementer -> Reviewer -> Fixer -> Reviewer).
-Return the markdown table and loop description ONLY. Do not write other text.
+Create the Team Manifest: one persona entry per agent, plus the handoff loop
+description (e.g. "implementer -> reviewer -> fixer -> reviewer").
+Every handsOffTo target must be one of: ${agentNames.map(n => `"${n}"`).join(", ")}, or "human".
+
+Return a JSON object with this exact shape:
+{
+  "loop": "implementer -> reviewer -> human",
+  "personas": [
+    {
+      "persona": "agent-name",
+      "loadsSkills": ["skill-name"],
+      "triggeredBy": "what starts this persona",
+      "receives": "input payload",
+      "produces": "output payload",
+      "handsOffTo": "agent-name",
+      "escalatesWhen": "condition for escalating to a human"
+    }
+  ]
+}
 `;
 
-  const manifestResult = await llmCall(llmConfig, manifestPrompt, "Return only the markdown team manifest section.", false, "fast");
+  let parsed;
+  try {
+    parsed = await llmCallJson(llmConfig, manifestPrompt, "Return only the JSON team manifest object.", "fast", "Team manifest");
+  } catch (err) {
+    log.warn(`${err.message} — skipping the team manifest (agents still ship).`);
+    return null;
+  }
+  if (!Array.isArray(parsed.personas)) {
+    log.warn("Team manifest: model returned no `personas` array — skipping the team manifest (agents still ship).");
+    return null;
+  }
+
+  const validTargets = new Set([...agentNames, "human"]);
+  const validSkillNames = new Set(verifiedSkills.map(s => s.name));
+  const sanitizeTarget = (target) => {
+    const t = String(target ?? "").trim();
+    if (validTargets.has(t)) return t;
+    log.warn(`Team manifest: handoff target "${t}" is not a surviving agent — replaced with "human".`);
+    return "human";
+  };
+  const personas = parsed.personas
+    // A persona row must name a surviving agent — a hallucinated extra row
+    // advertises a persona with no written file, the exact misrepresentation
+    // this function exists to prevent.
+    .filter(p => {
+      const name = String(p?.persona ?? "").trim();
+      if (agentNames.includes(name)) return true;
+      log.warn(`Team manifest: persona "${name}" is not a surviving agent — row dropped.`);
+      return false;
+    })
+    .map(p => ({
+      ...p,
+      persona: String(p.persona).trim(),
+      // Skills listed must be ones this run actually verified — never advertise
+      // a persona loading a skill that does not exist on disk.
+      loadsSkills: (Array.isArray(p?.loadsSkills) ? p.loadsSkills : []).filter(skillName => {
+        if (validSkillNames.has(skillName)) return true;
+        log.warn(`Team manifest: persona "${String(p.persona).trim()}" lists "${skillName}", which is not a verified skill — removed.`);
+        return false;
+      }),
+      handsOffTo: Array.isArray(p?.handsOffTo)
+        ? p.handsOffTo.map(sanitizeTarget)
+        : sanitizeTarget(p?.handsOffTo),
+    }));
+  if (personas.length === 0) {
+    log.warn("Team manifest: no persona row named a surviving agent — skipping the team manifest (agents still ship).");
+    return null;
+  }
+
+  // The loop is free text rendered verbatim into the report — validate every
+  // step against the surviving agents so a hallucinated persona (whose row was
+  // dropped above) cannot still be advertised via the loop string.
+  let loop = String(parsed.loop || "");
+  if (loop) {
+    const steps = loop.split("->").map(s => s.trim()).filter(Boolean);
+    const invalid = steps.filter(s => !validTargets.has(s));
+    if (invalid.length > 0) {
+      log.warn(`Team manifest: loop names ${invalid.map(s => `"${s}"`).join(", ")} — not surviving agent(s); loop dropped.`);
+      loop = "";
+    }
+  }
+
   log.substep("Team manifest workflow established");
-  return manifestResult.trim();
+  return { loop, personas };
 }
 
 // ----------------------------------------------------
@@ -776,7 +903,9 @@ Return your findings in JSON format ONLY. Do not write any conversational text.
 ${reportContent}
 
 === Task ===
-Extract all entries from the "Built / reused skills — with identity" table.
+Extract two things from the report:
+
+1. All entries from the "Built / reused skills — with identity" table.
 For each skill, extract:
 - name: name of the skill
 - origin: BUILT, EXTEND, or REUSED
@@ -785,6 +914,13 @@ For each skill, extract:
 - fingerprint: content fingerprint (e.g. sha256:...)
 - verification: verification details
 - reuseCheckStatus: the reuse-checked / reuse-unchecked status
+
+2. All entries from the "Deferred — next mining pass" and "Rejected" sections.
+For each, extract:
+- name: candidate name
+- decision: "DEFER" for deferred entries, "REJECT" for rejected entries
+- objection: the reason given
+- revisitWhen: the revisit condition (deferred entries only; "" otherwise)
 
 Return a JSON object with this exact shape:
 {
@@ -798,12 +934,45 @@ Return a JSON object with this exact shape:
       "verification": "...",
       "reuseCheckStatus": "..."
     }
+  ],
+  "extraCandidates": [
+    {
+      "name": "candidate-name",
+      "decision": "DEFER",
+      "objection": "...",
+      "revisitWhen": "..."
+    }
   ]
 }
+If a section is absent, return an empty array for it.
 `;
 
   const response = await llmCall(llmConfig, prompt, systemInstruction, true, "fast");
   const parsed = JSON.parse(cleanJsonResponse(response));
-  log.step(`Extracted ${parsed.skills.length} skills from report`);
-  return parsed.skills;
+
+  // Fail closed on schema drift: coercing a missing/non-array "skills" key to
+  // [] would let a partial run overwrite the legacy report (and mint an
+  // authoritative empty JSON sidecar) as if zero skills had ever been mined.
+  if (!Array.isArray(parsed?.skills)) {
+    throw new Error(
+      "parseMinedReport: extractor output has no \"skills\" array (schema drift) — refusing to treat the existing report as empty."
+    );
+  }
+  const skills = parsed.skills;
+
+  // DEFER/REJECT rows feed the reconstructed ledger so a legacy --report-only
+  // run no longer silently drops them. Anything with a drifted decision token
+  // is discarded — the ledger only understands these two states here.
+  const extraCandidates = (Array.isArray(parsed.extraCandidates) ? parsed.extraCandidates : [])
+    .map(c => ({
+      name: c?.name,
+      type: "skill",
+      decision: String(c?.decision || "").toUpperCase(),
+      objection: c?.objection || "",
+      revisitWhen: c?.revisitWhen || "",
+    }))
+    .filter(c => c.name && (c.decision === "DEFER" || c.decision === "REJECT"));
+
+  log.step(`Extracted ${skills.length} skills and ${extraCandidates.length} deferred/rejected row(s) from report`);
+  return { skills, extraCandidates };
 }

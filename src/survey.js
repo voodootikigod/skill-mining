@@ -60,8 +60,22 @@ const DEFAULT_EXCLUDES = [
   /(^|\/)\.cache($|\/)/,
 ];
 
+/**
+ * Exclusion list for a run: the defaults plus the run's artifact output
+ * directory. `.agents` is hardcoded above, but a custom --out-dir (e.g. the
+ * docs-suggested ".claude") would otherwise be surveyed as ordinary repo
+ * content on a re-mine — letting Detect propose self-referential candidates
+ * evidenced by the tool's own prior SKILL.md/agent output.
+ */
+export function buildSurveyExcludes(outDir) {
+  const normalized = (outDir || "").replace(/^\.\//, "").replace(/[/\\]+$/, "");
+  if (!normalized || normalized === ".") return DEFAULT_EXCLUDES;
+  const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return [...DEFAULT_EXCLUDES, new RegExp(`^${escaped}($|[/\\\\])`)];
+}
+
 // Walk the directory recursively and return a list of relative file paths
-async function walkDir(dir, gitignoreRules = [], baseDir = dir) {
+async function walkDir(dir, gitignoreRules = [], baseDir = dir, excludes = DEFAULT_EXCLUDES) {
   let results = [];
   let list;
   try {
@@ -74,7 +88,7 @@ async function walkDir(dir, gitignoreRules = [], baseDir = dir) {
     const filePath = path.join(dir, file);
     const relativePath = path.relative(baseDir, filePath);
 
-    if (DEFAULT_EXCLUDES.some(rx => rx.test(relativePath) || rx.test(filePath))) {
+    if (excludes.some(rx => rx.test(relativePath) || rx.test(filePath))) {
       continue;
     }
     if (gitignoreRules.some(rx => rx.test(relativePath))) {
@@ -89,7 +103,7 @@ async function walkDir(dir, gitignoreRules = [], baseDir = dir) {
     }
 
     if (stat.isDirectory()) {
-      const subResults = await walkDir(filePath, gitignoreRules, baseDir);
+      const subResults = await walkDir(filePath, gitignoreRules, baseDir, excludes);
       results = results.concat(subResults);
     } else {
       results.push(relativePath);
@@ -104,7 +118,7 @@ async function walkDir(dir, gitignoreRules = [], baseDir = dir) {
 // non-ASCII and newline-containing filenames survive verbatim — otherwise
 // git C-quotes them and the literal `"src/caf\303\251.js"` enters allPaths,
 // breaking evidence verification (false "fabricated" flags).
-function listFilesViaGit(targetDir) {
+function listFilesViaGit(targetDir, excludes = DEFAULT_EXCLUDES) {
   const output = execSync("git -c core.quotepath=false ls-files -z --cached --others --exclude-standard", {
     cwd: targetDir,
     encoding: "utf8",
@@ -113,7 +127,7 @@ function listFilesViaGit(targetDir) {
   return output
     .split("\0")
     .filter(Boolean)
-    .filter(p => !DEFAULT_EXCLUDES.some(rx => rx.test(p)));
+    .filter(p => !excludes.some(rx => rx.test(p)));
 }
 
 /**
@@ -131,9 +145,9 @@ export function parseChurn(nameOnlyLog) {
   return counts;
 }
 
-function topEntries(counts, limit) {
+function topEntries(counts, limit, excludes = DEFAULT_EXCLUDES) {
   return Object.entries(counts)
-    .filter(([file]) => !DEFAULT_EXCLUDES.some(rx => rx.test(file)))
+    .filter(([file]) => !excludes.some(rx => rx.test(file)))
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit)
     .map(([file, count]) => ({ file, count }));
@@ -171,7 +185,7 @@ export function buildExtHistogram(paths) {
 }
 
 // Run git commands to gather churn, bug-fix density, and recent history.
-function getGitData(targetDir) {
+function getGitData(targetDir, excludes = DEFAULT_EXCLUDES) {
   const data = {
     isGit: false,
     headCommit: null,
@@ -193,7 +207,7 @@ function getGitData(targetDir) {
     const churnLog = execSync("git log -n 500 --pretty=format: --name-only", {
       cwd: targetDir, encoding: "utf8", maxBuffer: 50 * 1024 * 1024,
     });
-    data.hotspots = topEntries(parseChurn(churnLog), 20);
+    data.hotspots = topEntries(parseChurn(churnLog), 20, excludes);
 
     // Files most touched by fix/revert/bug commits — pain concentration
     try {
@@ -201,7 +215,7 @@ function getGitData(targetDir) {
         "git log -n 500 --pretty=format: --name-only --regexp-ignore-case --extended-regexp --grep='fix|revert|bug'",
         { cwd: targetDir, encoding: "utf8", maxBuffer: 50 * 1024 * 1024 }
       );
-      data.bugFixHotspots = topEntries(parseChurn(fixLog), 15);
+      data.bugFixHotspots = topEntries(parseChurn(fixLog), 15, excludes);
     } catch (err) {
       // No matching commits is fine
     }
@@ -364,20 +378,23 @@ async function readSamples(targetDir, samplePaths) {
   return samples;
 }
 
-// Perform the full survey
-export async function surveyProject(targetDir) {
+// Perform the full survey. `outDir` is the run's artifact output directory —
+// it is excluded from the survey (see buildSurveyExcludes) so prior mined
+// output never feeds a later mining pass.
+export async function surveyProject(targetDir, { outDir } = {}) {
   log.info(`Surveying project at: ${targetDir}`);
 
   const absoluteTarget = path.resolve(targetDir);
+  const excludes = buildSurveyExcludes(outDir);
 
   // Get git data first — file listing strategy depends on it
   log.step("Querying Git history...");
-  const gitData = getGitData(absoluteTarget);
+  const gitData = getGitData(absoluteTarget, excludes);
 
   let paths;
   if (gitData.isGit) {
     log.step("Listing files via git ls-files...");
-    paths = listFilesViaGit(absoluteTarget);
+    paths = listFilesViaGit(absoluteTarget, excludes);
   } else {
     log.step("Not a git repository — walking directory with .gitignore fallback...");
     let gitignoreRules = [];
@@ -387,7 +404,7 @@ export async function surveyProject(targetDir) {
     } catch (err) {
       // No .gitignore; default excludes only
     }
-    paths = await walkDir(absoluteTarget, gitignoreRules);
+    paths = await walkDir(absoluteTarget, gitignoreRules, absoluteTarget, excludes);
   }
   log.step(`Found ${paths.length} files (excluding ignored/build paths)`);
 

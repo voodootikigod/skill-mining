@@ -1,5 +1,50 @@
-import { execSync, execFileSync } from "child_process";
+import { execSync, spawn } from "child_process";
 import { log } from "./utils.js";
+
+// Run a local CLI with stderr IGNORED at the fd level. Promisified execFile
+// buffers stderr and enforces maxBuffer on it, so a chatty CLI writing >10MB
+// of spinner/progress logs to stderr would kill an otherwise-successful call.
+// The sync predecessor ran with stdio [pipe, pipe, 'ignore'] for exactly this
+// reason — this helper preserves that contract: only stdout is captured and
+// bounded; stderr never reaches our output or any buffer limit.
+function execCliIgnoringStderr(binary, args, { input, shell = false, maxBuffer = 10 * 1024 * 1024 } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(binary, args, { stdio: ["pipe", "pipe", "ignore"], shell });
+    const chunks = [];
+    let stdoutLength = 0;
+    let settled = false;
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      child.kill();
+      reject(err);
+    };
+    child.on("error", fail);
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdoutLength += chunk.length;
+      if (stdoutLength > maxBuffer) {
+        fail(new Error("stdout maxBuffer length exceeded"));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      if (code === 0) {
+        resolve(chunks.join(""));
+      } else {
+        reject(new Error(`Command failed: ${binary} (exit code ${code})`));
+      }
+    });
+    // A CLI that exits without reading stdin raises EPIPE on the stream —
+    // that must surface as the child's failure (exit code), never as an
+    // unhandled stream error.
+    child.stdin.on("error", () => {});
+    child.stdin.end(input ?? "");
+  });
+}
 
 // Helper to clean JSON responses, robustly extracting JSON even if wrapped in text or markdown code blocks
 export function cleanJsonResponse(text) {
@@ -56,13 +101,39 @@ function isCmdInstalled(cmd) {
 // "fast" runs the mechanical phases (Score, Dedupe decision, team manifest).
 const DEFAULT_MODELS = {
   anthropic: { strong: "claude-sonnet-4-6", fast: "claude-haiku-4-5" },
-  openai: { strong: "gpt-4o", fast: "gpt-4o-mini" },
+  openai: { strong: "gpt-5", fast: "gpt-5-mini" },
   gemini: { strong: "gemini-2.5-pro", fast: "gemini-2.5-flash" },
 };
 
 // Output budget for API providers. Author/Report-sized outputs need headroom;
 // the old 4000 cap silently truncated long SKILL.md bodies.
 const MAX_OUTPUT_TOKENS = 16000;
+
+// Each provider signals a hit output cap differently. A truncated body is
+// silent corruption downstream (half a SKILL.md ships as if complete), so
+// llmCall must throw on it — exported so the detection is unit-testable.
+export function isTruncated(provider, data) {
+  if (provider === "anthropic") {
+    return data?.stop_reason === "max_tokens";
+  }
+  if (provider === "openai") {
+    return data?.choices?.[0]?.finish_reason === "length";
+  }
+  if (provider === "gemini") {
+    return data?.candidates?.[0]?.finishReason === "MAX_TOKENS";
+  }
+  return false;
+}
+
+function truncationError(provider) {
+  return new Error(`${provider} response truncated at ${MAX_OUTPUT_TOKENS} output tokens — output budget exhausted`);
+}
+
+// Newer OpenAI families (o-series reasoning models, gpt-5) reject max_tokens
+// and require max_completion_tokens instead.
+export function openAiTokenParam(model) {
+  return /^(o\d|gpt-5)/.test(model || "") ? "max_completion_tokens" : "max_tokens";
+}
 
 // Model identifiers are plain tokens (claude-sonnet-4-6, gpt-4o,
 // us.anthropic.claude-…, vendor/model). Anything outside this charset —
@@ -100,7 +171,7 @@ export function resolveTierModel(config, tier = "strong") {
 
 // Build the CLI argv for a local subscription agent, honoring a model
 // override when the CLI supports one. Unknown CLIs ignore the tier (graceful
-// degrade). Returned as [binary, ...args] for execFileSync — no shell is ever
+// degrade). Returned as [binary, ...args] for execFile — no shell is ever
 // involved, so prompt/model content cannot be shell-expanded.
 export function buildCliArgv(cliCmd, model) {
   if (cliCmd === "claude") {
@@ -113,7 +184,7 @@ export function buildCliArgv(cliCmd, model) {
 }
 
 // Invokes a local CLI agent subscription by piping the prompt to standard input
-function callCliLLM(cliCmd, prompt, systemInstruction, model) {
+async function callCliLLM(cliCmd, prompt, systemInstruction, model) {
   let fullPrompt = "";
   if (systemInstruction) {
     fullPrompt += `System Instructions:\n${systemInstruction}\n\n`;
@@ -131,21 +202,19 @@ function callCliLLM(cliCmd, prompt, systemInstruction, model) {
   const isWindows = process.platform === "win32";
 
   try {
-    // Pipe full prompt to the CLI tool's stdin (no shell on POSIX)
-    const stdout = execFileSync(binary, cliArgs, {
+    // Pipe full prompt to the CLI tool's stdin (no shell on POSIX). stderr is
+    // ignored at the fd level — terminal spinner logs must neither reach our
+    // output nor count against any buffer limit.
+    const stdout = await execCliIgnoringStderr(binary, cliArgs, {
       input: fullPrompt,
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "ignore"], // Ignore stderr to avoid piping terminal spinner logs
-      maxBuffer: 10 * 1024 * 1024, // 10MB limit
       shell: isWindows,
     });
-
     return stdout.trim();
   } catch (err) {
     // Fall back to passing the prompt as a positional argument if the CLI
     // does not read stdin. The prompt contains untrusted repo content (commit
     // messages, file contents) and must never hit a shell — so this fallback
-    // is POSIX-only (execFileSync argv, no shell). On Windows there is no
+    // is POSIX-only (execFile argv, no shell). On Windows there is no
     // shell-safe way to pass it positionally; fail with a clear remedy.
     if (isWindows) {
       throw new Error(
@@ -157,11 +226,9 @@ function callCliLLM(cliCmd, prompt, systemInstruction, model) {
     }
     try {
       log.substep(`Stdin piping not supported by ${label}, retrying as argument...`);
-      const stdout = execFileSync(binary, [...cliArgs, fullPrompt], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-        maxBuffer: 10 * 1024 * 1024
-      });
+      // The sync version ran this fallback with stdin ignored — the helper
+      // closes stdin immediately when no input is given.
+      const stdout = await execCliIgnoringStderr(binary, [...cliArgs, fullPrompt]);
       return stdout.trim();
     } catch (err2) {
       throw new Error(`Failed to execute local CLI agent "${label}": ${err2.message || err.message}`);
@@ -291,6 +358,13 @@ export async function llmCallJson(config, prompt, systemInstruction, tier, label
 
 // Universal LLM call wrapper. `tier` selects the model: "strong" | "fast" | "gate".
 export async function llmCall(config, prompt, systemInstruction = "", jsonMode = false, tier = "strong") {
+  // Injectability seam (contract C4): a config may carry a `caller` function —
+  // tests script it to exercise gate/phase logic without a network or CLI.
+  // Production configs built by configureLLM never set it.
+  if (typeof config.caller === "function") {
+    return await config.caller(config, prompt, systemInstruction, jsonMode, tier);
+  }
+
   const { provider, apiKey, cliCmd } = config;
   const model = resolveTierModel(config, tier);
 
@@ -326,6 +400,11 @@ export async function llmCall(config, prompt, systemInstruction = "", jsonMode =
         }
 
         const data = await res.json();
+        // Check truncation before shape: a MAX_TOKENS candidate may lack parts,
+        // and the truncation diagnosis must win over a generic format error.
+        if (isTruncated("gemini", data)) {
+          throw truncationError("Gemini");
+        }
         if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts) {
           throw new Error("Invalid response format from Gemini API: " + JSON.stringify(data));
         }
@@ -334,31 +413,45 @@ export async function llmCall(config, prompt, systemInstruction = "", jsonMode =
 
       } else if (provider === "openai") {
         const url = "https://api.openai.com/v1/chat/completions";
-        const body = {
+        const buildBody = (tokenParam) => ({
           model,
           messages: [
             ...(systemInstruction ? [{ role: "system", content: systemInstruction }] : []),
             { role: "user", content: prompt },
           ],
-          max_tokens: MAX_OUTPUT_TOKENS,
+          [tokenParam]: MAX_OUTPUT_TOKENS,
           response_format: jsonMode ? { type: "json_object" } : undefined,
-        };
-
-        const res = await fetch(url, {
+        });
+        const doFetch = (tokenParam) => fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${apiKey}`,
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify(buildBody(tokenParam)),
         });
+
+        const tokenParam = openAiTokenParam(model);
+        let res = await doFetch(tokenParam);
 
         if (!res.ok) {
           const errText = await res.text();
-          throw new Error(`OpenAI API error (${res.status}): ${errText}`);
+          // Model families outside the openAiTokenParam pattern can still
+          // reject max_tokens — retry once with the newer parameter name.
+          if (res.status === 400 && tokenParam === "max_tokens" && /max_tokens/i.test(errText)) {
+            res = await doFetch("max_completion_tokens");
+            if (!res.ok) {
+              throw new Error(`OpenAI API error (${res.status}): ${await res.text()}`);
+            }
+          } else {
+            throw new Error(`OpenAI API error (${res.status}): ${errText}`);
+          }
         }
 
         const data = await res.json();
+        if (isTruncated("openai", data)) {
+          throw truncationError("OpenAI");
+        }
         return data.choices[0].message.content;
 
       } else if (provider === "anthropic") {
@@ -386,7 +479,16 @@ export async function llmCall(config, prompt, systemInstruction = "", jsonMode =
         }
 
         const data = await res.json();
-        return data.content[0].text;
+        if (isTruncated("anthropic", data)) {
+          throw truncationError("Anthropic");
+        }
+        // Content may lead with non-text blocks (e.g. thinking) — take the
+        // first text block instead of assuming content[0] is one.
+        const textBlock = (data.content || []).find((block) => block.type === "text");
+        if (!textBlock) {
+          throw new Error("Invalid response format from Anthropic API: no text content block");
+        }
+        return textBlock.text;
       }
     } catch (err) {
       retries--;
