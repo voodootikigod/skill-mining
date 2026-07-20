@@ -5,7 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-07-20
+
 ### Added
+- Deterministic grounding pre-check (`src/grounding.js`): every Gate B review round verifies the authored skill's cited paths and npm-script references against the real survey; code-verified defects veto a reviewer SHIP and feed the fix prompt.
+- Gate A 3-skeptic escalation for risk-relevant candidates (security/auth/deploy/payment/migration keywords, word-anchored): any-REJECT veto, 2-of-3 build-like majority, splits defer.
+- Truncation detection on every provider response (Anthropic `stop_reason`, OpenAI `finish_reason`, Gemini `finishReason`) — a truncated artifact now fails closed instead of shipping cut off.
+- CLI: `--version`/`-v`, `--out-dir <dir>` (target any harness skills tree; recorded in the sidecar), `--dry-run` (post-dedupe ledger preview, writes nothing; refused in partial modes).
+- Bounded parallelization of all per-item pipeline loops (order-preserving `mapLimit`): ecosystem searches ×4, authoring ×3, dedupe decisions ×4, Gate B ×2, agent gate ×3.
+- Injectable LLM caller seam (`llmConfig.caller`) and test coverage for the gates, grounding, and fingerprinting (suite grew from 41 to 137 tests).
+- OIDC trusted publishing: the publish workflow is gated behind the reviewed `npm-publish` environment, tokenless, with provenance.
+
+### Fixed
+- Gate B fix prompts now include the repo ground truth, test task, and grounding findings; no fix call is wasted on the final round; lint-repaired markdown is re-grounded before shipping.
+- Score phase dedupes model output by name (a duplicate previously aborted the whole run at report lint).
+- Partial-mode policy check requires a Gate B SHIP verdict (with v1.6.x legacy-format compatibility) instead of a substring match.
+- Legacy no-sidecar reports recover Deferred/Rejected ledger rows instead of silently dropping them.
+- Team manifest is composed as structured data with validated handoff targets and personas, rendered deterministically.
+- `isSafePackageRef` accepts scoped `@org/repo[@version]` references; `--flag=value` parsing preserves values containing `=`.
+- OpenAI reasoning models use `max_completion_tokens` (defaults refreshed to `gpt-5`/`gpt-5-mini`).
+- Version is single-sourced from `package.json` at runtime (`HELP_TEXT` and `--version`), retiring the hand-edited bump site.
+
+### Changed
+- Docs aligned with implementation: SKILL.md documents the grounded Gate B loop and Gate A voting rules as implemented; cross-harness overlays marked as manual/roadmap; re-mined dogfood artifacts (`SKILLS_MINED.md` + JSON sidecar) replace the stale 2026-06-08 report.
+
+### Added (carried from the 1.9.0-era polish pass, previously listed as Unreleased)
 - `CONTRIBUTING.md`, `SECURITY.md` (with accurate symlink and exit-code scope), `.github/workflows/test.yml` (CI test matrix on Node 20 + 22), GitHub issue and PR templates.
 - `CHANGELOG.md` documenting all prior releases.
 - `package.json`: `keywords`, `bugs`, `homepage` fields for npm discoverability.

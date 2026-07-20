@@ -1,6 +1,6 @@
 {
   "name": "skill-mining",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Mine skills and agents from a codebase as durable, reusable SKILL.md artifacts",
   "type": "module",
   "bin": {
