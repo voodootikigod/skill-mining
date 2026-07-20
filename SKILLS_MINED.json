@@ -1,0 +1,389 @@
+{
+  "repoName": "skill-mining",
+  "scope": ".",
+  "outDir": ".agents",
+  "date": "2026-07-20",
+  "headCommit": "3d7d819cb0ec2f2b7c529349a57d2a71198494c9",
+  "exclusions": [],
+  "coverage": {
+    "filesCount": 40,
+    "samplesCount": 11,
+    "painTotal": 6,
+    "caps": [
+      "prompt file list capped at 300 paths (full tree summary included)",
+      "source samples capped at 12 files × 4000 chars",
+      "churn/bug-fix windows: last 500 commits",
+      "CI workflow files capped at 5",
+      "stale skill directories on disk, not produced by this run (review/remove manually): ecosystem-skill-deduplication, gate-b-red-team-verification, release"
+    ]
+  },
+  "candidates": [
+    {
+      "name": "deterministic-checks-not-llm",
+      "type": "skill",
+      "scores": {
+        "freq": 4,
+        "lev": 4,
+        "bsp": 3,
+        "stab": 4,
+        "ver": 5
+      },
+      "decision": "EXTEND",
+      "objection": "The core principle is plausibly already covered by jpcaparas/skills@heuristic-to-deterministic (40 installs) in the ecosystemSearch output — the generic 'replace model heuristics with deterministic checks' idea is not bespoke. What IS bespoke and worth keeping is the repo-specific enforcement layer: RISK_RE word-anchored routing, Set-lookup evidence verification, and the fail-closed rule that deterministic findings are handed to LLM reviewers as non-overrulable confirmed defects. Extend the existing skill with those invariants rather than building a parallel statement of the general principle.",
+      "justification": "The ecosystem search surfaced jpcaparas/skills@heuristic-to-deterministic (40 installs), which by name and the skeptic's assessment already covers the generic principle of replacing model-based heuristics with deterministic checks — building a parallel restatement of that principle would create skill sprawl. However, the candidate's real value is not the general principle but this repo's enforcement layer: RISK_RE word-anchored gate routing with no LLM in the loop, Set-lookup verification of cited evidence paths, sha256 whole-directory fingerprinting, deterministic report rendering (avoiding model-rendered tables that drop rows), and the fail-closed invariant that deterministic findings are passed to LLM reviewers as confirmed, non-overrulable defects. None of that repo-specific contract is plausibly present in the public skill. EXTEND is therefore correct: adopt heuristic-to-deterministic as the base statement of the principle and author a thin overlay documenting the fail-closed enforcement invariants and the specific modules (src/evidence.js, src/grounding.js, src/fingerprint.js, src/gates.js, src/report.js) that implement them. Caveat worth recording: the search output provides only names and install counts, so the overlay author should verify the base skill's actual content covers the general principle before finalizing; if it does not, escalate to BUILD.",
+      "source": "jpcaparas/skills@heuristic-to-deterministic",
+      "evidenceVerified": true,
+      "evidenceNotes": "all 9 cited path(s) exist in the repo",
+      "gateADelta": 5,
+      "revisitWhen": null
+    },
+    {
+      "name": "safe-subprocess-invocation",
+      "type": "skill",
+      "scores": {
+        "freq": 4,
+        "lev": 5,
+        "bsp": 5,
+        "stab": 4,
+        "ver": 5
+      },
+      "decision": "BUILD",
+      "objection": "survived: registry search returned literally 'No skills found' for the primary query and only an irrelevant hit (warpdotdev@readout) for the secondary, so REUSE is off the table; evidence is verified and src/dedupe.js has 2 bug-fix commits proving the gotchas were paid for twice. The Windows .cmd shim forcing shell:true (making sanitizeQuery-before-winQuote ordering load-bearing) and the cold-npx-timeout-launders-into-BUILD failure are exactly the class of cross-platform subprocess traps a competent agent re-hits — I could not refute leverage or bespokeness.",
+      "justification": "Registry search returned no relevant public skill: the primary query 'safe subprocess invocation' found nothing, and the secondary query's only hit (warpdotdev/common-skills@readout) is unrelated to subprocess spawning. With REUSE and EXTEND off the table, the candidate stands on verified, repo-specific tribal knowledge — sanitize-before-winQuote ordering forced by the Windows .cmd shim's shell:true requirement, differentiated warmup vs search timeouts, stdin.end() to prevent npx hangs, and NUL-safe git path listing — with two bug-fix commits in src/dedupe.js proving these gotchas were re-hit and paid for. This is exactly the cross-platform subprocess trap class an agent would rediscover without the skill, so BUILD is justified.",
+      "source": "this repo",
+      "evidenceVerified": true,
+      "evidenceNotes": "all 3 cited path(s) exist in the repo",
+      "gateADelta": 3,
+      "revisitWhen": null
+    },
+    {
+      "name": "survey-exclusion-and-git-semantics",
+      "type": "skill",
+      "scores": {
+        "freq": 2,
+        "lev": 3,
+        "bsp": 5,
+        "stab": 3,
+        "ver": 4
+      },
+      "decision": "DEFER",
+      "objection": "Recurrence is not proven: the out-dir self-contamination gotcha happened once and is now mechanically guarded by buildSurveyExcludes — the code itself enforces the invariant, so a skill only pays off when someone next modifies the survey. Three TODO markers are intentions, not recurrence, and the SURVEY_CAPS coupling is a single-file checklist item. Ecosystem hits (typing-exclusion-worker, placement-exclusion-manager) are name-collision noise, so REUSE is wrong, but the evidence today is one incident plus anticipation.",
+      "justification": "Deferred during scoring/challenge",
+      "source": "n/a",
+      "evidenceVerified": true,
+      "evidenceNotes": "all 3 cited path(s) exist in the repo",
+      "gateADelta": 2,
+      "revisitWhen": "survey.js's TODOs are actually worked, or a second exclusion/caps regression (missed SURVEY_CAPS update, out-dir contamination recurrence) lands in commit history"
+    },
+    {
+      "name": "adversarial-gate-mechanics",
+      "type": "skill",
+      "scores": {
+        "freq": 3,
+        "lev": 3,
+        "bsp": 5,
+        "stab": 3,
+        "ver": 4
+      },
+      "decision": "REJECT",
+      "objection": "The candidate cites skill-mining/references/adversarial-review.md as its own evidence — this knowledge is ALREADY authored, in-repo, as the canonical reference the gates ship with. Mining a second artifact restating blind payloads, veto rules, and MAX_FIX_ROUNDS creates two sources of truth for gate invariants, and the reference file's own churn (2 changes, 1 bug-fix) guarantees the mined copy drifts stale. The correct move is pointing at the existing reference, not duplicating it; a duplicate that silently diverges from the real voting rules is worse than no skill.",
+      "justification": "Rejected during scoring/challenge",
+      "source": "n/a",
+      "evidenceVerified": true,
+      "evidenceNotes": "all 4 cited path(s) exist in the repo",
+      "gateADelta": 1,
+      "revisitWhen": null
+    },
+    {
+      "name": "release-and-publish-recipe",
+      "type": "skill",
+      "scores": {
+        "freq": 3,
+        "lev": 4,
+        "bsp": 2,
+        "stab": 4,
+        "ver": 5
+      },
+      "decision": "REJECT",
+      "objection": "The evidence refutes the build case itself: .claude/commands/release.md and .claude/release-profile.md already exist in-repo and encode exactly this tag-driven OIDC flow — the recipe is captured, and this is a risk-relevant (publish) procedure where a duplicate skill diverging from the real command is the worst failure mode available. Ecosystem coverage is also broad (thedotmack/claude-mem@claude-code-plugin-release at 4.1K installs, nvidia/skills@nemoclaw-maintainer-cut-release-tag) for the generic tag/publish shape. Reuse the existing in-repo command + profile; fold the PACKAGE_VERSION runtime-read gotcha into release-profile.md if it is missing there.",
+      "justification": "The candidate's own evidence shows this knowledge is already captured in-repo: .claude/commands/release.md and .claude/release-profile.md encode the exact tag-driven OIDC publish flow, including version-derivation rules. Building a new skill would duplicate a risk-relevant publish procedure, and divergence between the skill and the real release command is the worst available failure mode. No REUSE either: the ecosystem hits (thedotmack/claude-mem@claude-code-plugin-release, nvidia/skills@nemoclaw-maintainer-cut-release-tag, tldraw/tldraw@write-release-notes) cover only the generic tag/publish shape and would not encode this repo's specific VERSION derivation (INPUT_VERSION > TAG_NAME > REF_NAME) or provenance flags, so adopting one adds sprawl without covering the actual need. Correct action is to keep the existing command/profile as the single source of truth and fold any missing gotchas (e.g., the PACKAGE_VERSION runtime-read behavior) into .claude/release-profile.md rather than minting a parallel skill.",
+      "source": ".claude/commands/release.md + .claude/release-profile.md (existing in-repo)",
+      "evidenceVerified": true,
+      "evidenceNotes": "all 5 cited path(s) exist in the repo",
+      "gateADelta": 1,
+      "revisitWhen": null
+    },
+    {
+      "name": "pipeline-reviewer",
+      "type": "agent",
+      "scores": {
+        "freq": 3,
+        "lev": 4,
+        "bsp": 4,
+        "stab": 4,
+        "ver": 3
+      },
+      "decision": "REJECT",
+      "objection": "failed agent gate (cold-load or lint)",
+      "justification": "Agent role composed of skills",
+      "source": "this repo",
+      "evidenceVerified": true,
+      "evidenceNotes": "all 7 cited path(s) exist in the repo",
+      "gateADelta": null,
+      "revisitWhen": null
+    },
+    {
+      "name": "fail-closed-reuse-search-policy",
+      "type": "skill",
+      "scores": {
+        "freq": 2,
+        "lev": 5,
+        "bsp": 5,
+        "stab": 4,
+        "ver": 3
+      },
+      "decision": "DEFER",
+      "objection": null,
+      "justification": "Deferred during scoring/challenge",
+      "source": "n/a",
+      "evidenceVerified": false,
+      "evidenceNotes": "cited path(s) not found in repo: SKILLS_MINED.json",
+      "gateADelta": null,
+      "revisitWhen": "cited SKILLS_MINED.json sidecar evidence verifies in a re-run; alternatively fold this invariant into the deterministic-checks-not-llm skill rather than building a second overlapping one"
+    },
+    {
+      "name": "cli-flag-three-place-sync",
+      "type": "skill",
+      "scores": {
+        "freq": 2,
+        "lev": 4,
+        "bsp": 5,
+        "stab": 3,
+        "ver": 3
+      },
+      "decision": "DEFER",
+      "objection": null,
+      "justification": "Deferred during scoring/challenge",
+      "source": "n/a",
+      "evidenceVerified": false,
+      "evidenceNotes": "cited path(s) not found in repo: outDir/outDirExplicit",
+      "gateADelta": null,
+      "revisitWhen": "evidence re-verifies against the repo (the outDir/outDirExplicit cite is currently unconfirmed) or the next CLI flag change reproduces the three-place drift"
+    },
+    {
+      "name": "dogfood-own-skill-artifacts",
+      "type": "skill",
+      "scores": {
+        "freq": 2,
+        "lev": 4,
+        "bsp": 5,
+        "stab": 4,
+        "ver": 5
+      },
+      "decision": "DEFER",
+      "objection": null,
+      "justification": "Deferred during scoring/challenge",
+      "source": "n/a",
+      "evidenceVerified": false,
+      "evidenceNotes": "cited path(s) not found in repo: SKILL.md, candidate-taxonomy.md, adversarial-review.md",
+      "gateADelta": null,
+      "revisitWhen": "cited paths (SKILL.md, candidate-taxonomy.md, adversarial-review.md) verify deterministically in a re-run, or the next edit to skill-mining/SKILL.md trips lint again"
+    },
+    {
+      "name": "npm-package-files-whitelist",
+      "type": "skill",
+      "scores": {
+        "freq": 2,
+        "lev": 4,
+        "bsp": 4,
+        "stab": 4,
+        "ver": 4
+      },
+      "decision": "DEFER",
+      "objection": null,
+      "justification": "Deferred during scoring/challenge",
+      "source": "n/a",
+      "evidenceVerified": false,
+      "evidenceNotes": "cited path(s) not found in repo: skill-mining/mine-skills/mine",
+      "gateADelta": null,
+      "revisitWhen": "a new top-level runtime directory is added (the failure mode only fires then), or the bin-alias evidence cite verifies; consider a one-line npm pack --dry-run check in CI instead of a skill"
+    },
+    {
+      "name": "llm-json-contract-conventions",
+      "type": "skill",
+      "scores": {
+        "freq": 2,
+        "lev": 4,
+        "bsp": 4,
+        "stab": 3,
+        "ver": 3
+      },
+      "decision": "DEFER",
+      "objection": null,
+      "justification": "Deferred during scoring/challenge",
+      "source": "n/a",
+      "evidenceVerified": false,
+      "evidenceNotes": "cited path(s) not found in repo: context/prompt",
+      "gateADelta": null,
+      "revisitWhen": "evidence cites verify deterministically, or the next new LLM-calling phase is added and re-derives these contracts"
+    },
+    {
+      "name": "report-sidecar-contract",
+      "type": "skill",
+      "scores": {
+        "freq": 2,
+        "lev": 4,
+        "bsp": 5,
+        "stab": 3,
+        "ver": 3
+      },
+      "decision": "DEFER",
+      "objection": null,
+      "justification": "Deferred during scoring/challenge",
+      "source": "n/a",
+      "evidenceVerified": false,
+      "evidenceNotes": "cited path(s) not found in repo: SKILLS_MINED.json, --agents-only/--report-only",
+      "gateADelta": null,
+      "revisitWhen": "sidecar evidence verifies in a re-run, or the next change to the partial modes (--agents-only/--report-only) touches this contract again"
+    },
+    {
+      "name": "llm-provider-abstraction-rules",
+      "type": "skill",
+      "scores": {
+        "freq": 2,
+        "lev": 4,
+        "bsp": 3,
+        "stab": 2,
+        "ver": 3
+      },
+      "decision": "DEFER",
+      "objection": null,
+      "justification": "Deferred during scoring/challenge",
+      "source": "n/a",
+      "evidenceVerified": false,
+      "evidenceNotes": "cited path(s) not found in repo: strong/fast",
+      "gateADelta": null,
+      "revisitWhen": "provider APIs and model defaults hold stable for a quarter; if built, the skill must point at src/llm.js as the live source of truth rather than copying model names and fallback order that churn"
+    },
+    {
+      "name": "pipeline-implementer",
+      "type": "agent",
+      "scores": {
+        "freq": 4,
+        "lev": 3,
+        "bsp": 3,
+        "stab": 4,
+        "ver": 4
+      },
+      "decision": "DEFER",
+      "objection": null,
+      "justification": "Agent role composed of skills",
+      "source": "this repo",
+      "evidenceVerified": true,
+      "evidenceNotes": "all 8 cited path(s) exist in the repo",
+      "gateADelta": null,
+      "revisitWhen": "after the BUILD-band skills ship — if a generic implementer agent with those skills loaded still shows skill-discovery friction on 3+ tasks, promote to a dedicated agent"
+    },
+    {
+      "name": "pipeline-fixer",
+      "type": "agent",
+      "scores": {
+        "freq": 2,
+        "lev": 3,
+        "bsp": 3,
+        "stab": 4,
+        "ver": 4
+      },
+      "decision": "DEFER",
+      "objection": null,
+      "justification": "Agent role composed of skills",
+      "source": "this repo",
+      "evidenceVerified": false,
+      "evidenceNotes": "cited path(s) not found in repo: SKILL.md",
+      "gateADelta": null,
+      "revisitWhen": "evidence cites verify and 3+ more fix-shaped tasks recur after the underlying skills ship — a generic debugging agent loading those skills likely covers this role"
+    },
+    {
+      "name": "release-operator",
+      "type": "agent",
+      "scores": {
+        "freq": 2,
+        "lev": 2,
+        "bsp": 3,
+        "stab": 4,
+        "ver": 5
+      },
+      "decision": "REJECT",
+      "objection": null,
+      "justification": "Agent role composed of skills",
+      "source": "this repo",
+      "evidenceVerified": true,
+      "evidenceNotes": "all 4 cited path(s) exist in the repo",
+      "gateADelta": null,
+      "revisitWhen": null
+    },
+    {
+      "name": "how-this-repo-runs-and-tests",
+      "type": "skill",
+      "scores": {
+        "freq": 2,
+        "lev": 2,
+        "bsp": 2,
+        "stab": 4,
+        "ver": 5
+      },
+      "decision": "REJECT",
+      "objection": null,
+      "justification": "Rejected during scoring/challenge",
+      "source": "n/a",
+      "evidenceVerified": false,
+      "evidenceNotes": "cited path(s) not found in repo: skill-mining/mine-skills/mine, assert/strict, path/to/target",
+      "gateADelta": null,
+      "revisitWhen": null
+    },
+    {
+      "name": "node-test-authoring-conventions",
+      "type": "skill",
+      "scores": {
+        "freq": 2,
+        "lev": 2,
+        "bsp": 2,
+        "stab": 4,
+        "ver": 3
+      },
+      "decision": "REJECT",
+      "objection": null,
+      "justification": "Rejected during scoring/challenge",
+      "source": "n/a",
+      "evidenceVerified": false,
+      "evidenceNotes": "cited path(s) not found in repo: assert/strict",
+      "gateADelta": null,
+      "revisitWhen": null
+    }
+  ],
+  "skills": [
+    {
+      "name": "deterministic-checks-not-llm",
+      "origin": "EXTEND",
+      "source": "jpcaparas/skills@heuristic-to-deterministic",
+      "path": ".agents/skills/deterministic-checks-not-llm/",
+      "fingerprint": "sha256:77023c7109efb031693c981dcb1a4ddc2d39c8509f91098d50caa3de5a71156c",
+      "manifestText": "# deterministic-checks-not-llm — manifest @ 2026-07-20T22:20:55.266Z\nSKILL.md   sha256:3b84ce85a67fda60972367c4e0a8d1076548053e79368dd71297da127bbf20d4",
+      "verification": "**Gate B** @ 2026-07-20: used cold vs \"Harden the skill-mining pipeline by adding deterministic enforcement around the adversarial gates: verify cited evidence paths with Set lookups in src/evidence.js, route candidates to the risk gate via word-anchored RISK_RE keyword matching in src/gates.js, and ensure all deterministic findings fail closed and are passed to LLM reviewers as non-overridable confirmed defects.\" (real commit 65e834c) → SHIP; fixes: none",
+      "reuseCheckStatus": "reuse-checked: deterministic checks not llm / adding verification gate routing report rendering via npx skills find @ 2026-07-20T22:13:33.936Z"
+    },
+    {
+      "name": "safe-subprocess-invocation",
+      "origin": "BUILD",
+      "source": "this repo",
+      "path": ".agents/skills/safe-subprocess-invocation/",
+      "fingerprint": "sha256:4cbfdf25b06aaeb17af2ac482c3c491998d77e8fa1185308ba0b4dfec90fe59d",
+      "manifestText": "# safe-subprocess-invocation — manifest @ 2026-07-20T22:20:55.267Z\nSKILL.md   sha256:23c6e8931faf1cf3116b2add8b50de17e2541c67981b9a84db3437d8ea5ed825",
+      "verification": "**Gate B** @ 2026-07-20: used cold vs \"Add a local Codex CLI fallback to src/llm.js that invokes `codex exec` as a child process using execFile with an argv array (no shell strings), guards command detection against the Windows .cmd shim charset issue, ignores stderr noise, applies a timeout, and closes stdin to prevent hangs.\" (real commit b17b42b) → SHIP; fixes applied (1 round(s)): Step 6 mandates using execCliIgnoringStderr from src/llm.js but never documents its signature or contract: a cold agent cannot tell whether it accepts a timeout option, whether it closes the child's stdin internally, or what it returns (stdout string? object?). The test task requires 'applies a timeout' and 'closes stdin' — following the skill literally, the agent cannot verify either requirement is satisfied when routing through this helper, and may either omit the timeout entirely or double-handle stdin.; Step 5 (always call child.stdin.end()) and Step 6 (use execCliIgnoringStderr, whose stdio is ['pipe','pipe','ignore'] so stdin is a pipe) are in unresolved tension: the skill never states whether the helper ends stdin for you. A missing stdin.end() 'presents as a timeout, not an error' per the skill's own warning, so this ambiguity reproduces exactly the failure class the skill exists to prevent.; The only timeout constants the skill names (WARMUP_TIMEOUT_MS=60000, SEARCH_TIMEOUT_MS=15000) belong to src/dedupe.js and are semantically about npx skills searches. For the codex-exec call in src/llm.js the agent must invent a timeout value and constant name with no guidance — LLM CLI invocations plausibly need a much larger budget than 15s, and the Conventions section ('every subprocess call has an explicit timeout') gives no number for this call class.",
+      "reuseCheckStatus": "reuse-checked: safe subprocess invocation / spawning child process this codebase npx via npx skills find @ 2026-07-20T22:13:33.938Z"
+    }
+  ],
+  "agents": [],
+  "teamManifest": null,
+  "installHint": "voodootikigod/skill-mining"
+}
