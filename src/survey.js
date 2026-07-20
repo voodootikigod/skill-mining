@@ -97,8 +97,14 @@ async function walkDir(dir, gitignoreRules = [], baseDir = dir, excludes = DEFAU
 
     let stat;
     try {
-      stat = await fs.stat(filePath);
+      stat = await fs.lstat(filePath);
     } catch (err) {
+      continue;
+    }
+
+    // Skip symlinks — lstat does not follow them, so no path traversal outside baseDir
+    if (stat.isSymbolicLink()) {
+      log.warn(`Skipping symlink: ${relativePath}`);
       continue;
     }
 

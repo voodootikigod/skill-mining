@@ -54,6 +54,9 @@ import {
   composeTeamManifest,
   parseMinedReport
 } from "../src/phases.js";
+import {
+  runValidationCommand
+} from "../src/validate.js";
 
 // Survey bounds, surfaced in the report so a bounded pass never reads as exhaustive
 const SURVEY_CAPS = [
@@ -102,8 +105,13 @@ function deriveInstallHint(survey) {
 }
 
 async function main() {
-  // 1. Parse command-line args
-  const args = parseArgs(process.argv);
+  let args;
+  try {
+    args = parseArgs(process.argv);
+  } catch (err) {
+    console.error(colors.red(`Configuration error: ${err.message}`));
+    process.exit(1);
+  }
 
   if (args.help) {
     console.log(HELP_TEXT);
@@ -115,19 +123,65 @@ async function main() {
     process.exit(0);
   }
 
-  console.log(colors.bold(colors.cyan(`
+  if (args.command !== "validate") {
+    if (args.promptOnly || args.json || args.registry || args.alsoLocal.length > 0 || args.install || args.refine || args.force || args.quiet) {
+      console.error(colors.red("Configuration error: Validation-only options (--prompt-only, --json, --registry, --also-local, --install, --refine, --force, --quiet) cannot be used with the mine command."));
+      process.exit(1);
+    }
+  }
+
+  if (args.quiet) {
+    log.setQuietMode(true);
+  }
+
+  if (args.json || args.promptOnly) {
+    log.setJsonMode(true);
+  } else {
+    console.log(colors.bold(colors.cyan(`
 ╔══════════════════════════════════════════════════════════════════════╗
 ║                          SKILL MINING CLI                            ║
 ║     Extract and synthesize agent skills and teams from code          ║
 ╚══════════════════════════════════════════════════════════════════════╝
 `)));
+  }
 
   let llmConfig;
-  try {
-    llmConfig = configureLLM(args);
-  } catch (err) {
-    log.error(err.message);
-    process.exit(1);
+  if (args.command !== "validate") {
+    try {
+      llmConfig = configureLLM(args);
+    } catch (err) {
+      log.error(err.message);
+      process.exit(1);
+    }
+  }
+
+  if (args.command === "validate") {
+    try {
+      await runValidationCommand(args);
+      log.error("Validation failed: Validation pipeline finished without a final verdict exit.");
+      process.exit(3);
+    } catch (err) {
+      if (args.json) {
+        const path = await import("path");
+        const targetPath = args.target ? path.resolve(args.target) : "unknown";
+        const incompleteVerdict = {
+          schemaVersion: "1",
+          target: targetPath,
+          skillName: "unknown",
+          dedup: { decision: "REJECT", match: null, sources: [], rationale: `Operational failure: ${err.message}` },
+          gateB: { verdict: "REJECT", task: "n/a", evidence: `Operational failure: ${err.message}`, missing: [] },
+          scoring: { frequency: 0, leverage: 0, bespokeness: 0, stability: 0, verifiability: 0, provenanceUsed: false, rationale: `Operational failure: ${err.message}` },
+          verdict: "INCOMPLETE",
+          exitCode: 3,
+          complete: false,
+          notes: `Operational failure: ${err.message}`
+        };
+        console.log(JSON.stringify(incompleteVerdict, null, 2));
+      } else {
+        log.error(`Validation failed: ${err.message}`);
+      }
+      process.exit(3);
+    }
   }
 
   const targetDir = args.target;

@@ -1,6 +1,6 @@
 {
   "name": "skill-mining",
-  "version": "1.7.0",
+  "version": "1.9.0",
   "description": "Mine skills and agents from a codebase as durable, reusable SKILL.md artifacts",
   "type": "module",
   "bin": {
@@ -14,7 +14,7 @@
     "skill-mining/"
   ],
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "scripts": {
     "test": "node --test"
@@ -24,5 +24,19 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/voodootikigod/skill-mining.git"
-  }
+  },
+  "bugs": {
+    "url": "https://github.com/voodootikigod/skill-mining/issues"
+  },
+  "homepage": "https://github.com/voodootikigod/skill-mining#readme",
+  "keywords": [
+    "skills",
+    "skill-mining",
+    "agents",
+    "agent-skills",
+    "codebase-analysis",
+    "ai-agents",
+    "portfolio",
+    "llm-tools"
+  ]
 }

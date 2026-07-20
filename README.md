@@ -120,7 +120,7 @@ The loop executes a seven-phase process with two adversarial gates — **Survey 
 2. **Mined agents** — persona definitions (implementer, fixer, reviewer, migrator) written to `.agents/agents/<name>.md`.
 3. **`SKILLS_MINED.md`** — a synthesis report in the root with the ledger, fingerprints, and the **team manifest** wiring the handoff loop.
 
-### CLI & Agent Options
+### CLI & Agent Options (`mine`)
 
 Defaults give you the full output (skills + agents + team manifest). Flags only *remove* work:
 
@@ -158,6 +158,72 @@ the table deterministically — no model-rendered markdown tables.
 
 > [!NOTE]
 > **Local CLI Agents**: If no API keys are configured, the CLI will automatically scan for and utilize local subscription CLI agents in the following order: `agy`, `claude` (using `claude -p` fallback if stdin fails), `codex` (using `codex exec` fallback), or `gemini`.
+
+---
+
+### 3. Validate a single skill stub
+
+`validate` is a scoped entry point that vets one already-authored `SKILL.md` without running a full repo survey. It runs only **Dedupe + Gate B** and is designed to sit in a gated pipeline or CI.
+
+```bash
+npx skill-mining validate <path-to-SKILL.md> [options]
+```
+
+Accepts a flat `<name>.SKILL.md` file (e.g. from an ADLC lesson-foundry staging area) or a `<name>/SKILL.md` directory.
+
+**Exit codes:** `0` = SHIP, `2` = gate fail (REUSE / REJECT / DEFER / FIX), `3` = operational error or incomplete pipeline, `1` = argument / configuration error _or_ intermediate pause in `--prompt-only` mode (awaiting your piped LLM response — run again with the answer piped to stdin).
+
+| Flag / Option | Effect |
+|---|---|
+| `--json` | Print a schema-valid verdict JSON to stdout; all logs go to stderr. |
+| `--prompt-only` | Keyless mode — print each LLM prompt to stderr and pause; pipe the model's answer back to stdin on the next invocation. No API key required. |
+| `--registry <file>` | Path to a custom skills registry file (default: `skills.sh`). |
+| `--also-local <dir>` | Extra local directory to check for duplicate skills (repeatable). Defaults include `.adlc/lessons/` and `.agents/skills/`. |
+| `--install` | On a SHIP verdict, install the skill into the active harness's skills directory. |
+| `--refine` | Propose Gate B edits as a diff; prompt for approval before writing (headless: emit diff and exit 2). |
+| `--force` | Bypass the 24-hour re-validation cache and re-run from scratch. |
+| `--offline` | Allow registry search failure (marks dedup as `reuse-unchecked`). |
+| `--quiet` | Suppress non-essential output. |
+
+**Verdict JSON schema** (emitted with `--json`):
+
+```json
+{
+  "schemaVersion": "1",
+  "target": "path/to/SKILL.md",
+  "skillName": "my-skill",
+  "dedup": { "decision": "BUILD", "match": null, "sources": ["installed", "skills.sh"], "rationale": "..." },
+  "gateB": { "verdict": "SHIP", "task": "...", "evidence": "...", "missing": [] },
+  "scoring": { "frequency": 4, "leverage": 4, "bespokeness": 4, "stability": 4, "verifiability": 4, "provenanceUsed": false, "rationale": "..." },
+  "verdict": "SHIP",
+  "exitCode": 0,
+  "complete": true,
+  "notes": "..."
+}
+```
+
+Re-running `validate` on an unchanged stub returns the cached verdict instantly (24-hour TTL). Use `--force` to bypass.
+
+## Example output
+
+[`SKILLS_MINED.md`](./SKILLS_MINED.md) in this repository is a real output from running skill-mining against itself. It shows the candidate ledger, scores, reuse-vs-build decisions, team manifest, and install instructions.
+
+## Troubleshooting
+
+**No API key configured**
+The CLI will fall back to a locally installed subscription CLI agent (`agy`, `claude`, `codex`, or `gemini`) if no `*_API_KEY` environment variable is set. If none is found, the run will fail with a clear error. Set at least one key or install a CLI agent.
+
+**`npx skills find` fails / registry unreachable**
+The deduplication step fails closed: it exits with a `DEFER` verdict (exit code 2) rather than silently building a duplicate. Run with `--offline` to explicitly allow this (skills will be marked `reuse-unchecked` for a future re-check).
+
+**`--agents-only` fails with "missing sidecar"**
+`--agents-only` requires the `SKILLS_MINED.json` sidecar from a prior full run. If it is absent or the skills have changed since it was written, run a full pass first (drop the flag).
+
+**Validate exits with code 2**
+Exit code 2 means the skill did not receive a clean SHIP — the verdict will be `REUSE`, `REJECT`, `DEFER`, or `FIX`. `FIX` means the skill concept passed both checks but the `SKILL.md` content needs changes; run with `--refine` to see proposed edits. Run with `--json` to get the full structured verdict.
+
+**Tests write temp files to the project root**
+`npm test` creates and cleans up temporary `.SKILL.md` files in the working directory. If a test run is interrupted they may persist; they are covered by `.gitignore` (`test-*.SKILL.md`).
 
 ## What's in here
 
